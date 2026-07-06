@@ -673,6 +673,40 @@
       App.close = quitToLoader;
       App.report = function () {};
     }
+
+    // Loading-error screen: add an "Exit to loader" escape hatch.
+    //
+    // Stock RPG Maker MV (rpg_core.js Graphics.printLoadingError) shows a
+    // full-screen error with a single "Retry" button when a resource fails to
+    // load past ResourceHandler's retry budget. Retry is often futile in
+    // browser mode (a genuinely missing/corrupt IDB asset never appears), which
+    // strands the user with no way out. Wrap the stock method to append a
+    // second button that tears the game down and returns to /loader.html
+    // (re-import / clear-data flows live there), styled to match "Retry".
+    if (
+      typeof Graphics !== "undefined" &&
+      typeof Graphics.printLoadingError === "function"
+    ) {
+      var _stockPrintLoadingError = Graphics.printLoadingError;
+      Graphics.printLoadingError = function (url) {
+        _stockPrintLoadingError.call(this, url);
+        // Only when the stock method actually rendered the Retry button (guard
+        // matches its own: printer present and no fatal error already showed).
+        if (!this._errorPrinter || this._errorShowed) return;
+        var exitBtn = document.createElement("button");
+        exitBtn.innerHTML = "Exit to loader";
+        exitBtn.style.fontSize = "24px";
+        exitBtn.style.color = "#ffffff";
+        exitBtn.style.backgroundColor = "#000000";
+        exitBtn.style.marginLeft = "20px";
+        exitBtn.onmousedown = exitBtn.ontouchstart = function (event) {
+          quitToLoader();
+          event.stopPropagation();
+        };
+        this._errorPrinter.appendChild(exitBtn);
+      };
+    }
+
     if (typeof SceneManager !== "undefined") {
       SceneManager.terminate = quitToLoader;
 
