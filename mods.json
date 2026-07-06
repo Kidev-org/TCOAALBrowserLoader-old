@@ -8857,7 +8857,7 @@
     "mod": "BASE",
     "description": "Türkçe",
     "langFile": "dialogue.csv",
-    "version": "2026-07-04-1",
+    "version": "2026-07-05",
     "files": [
       "dialogue.csv",
       "icon.png",

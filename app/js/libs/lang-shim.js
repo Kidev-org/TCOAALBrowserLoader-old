@@ -976,6 +976,57 @@
     }
   }
 
+  /**
+   * Delete every `mod:{modId}:{relPath}` asset whose relPath is NOT in
+   * `keepSet` (a plain object used as a set of current relPaths). Used after a
+   * successful (re)install to purge files the mod no longer ships - e.g. a
+   * translation that switched its dialogue source from dialogue.txt to
+   * dialogue.csv would otherwise leave the stale .txt behind, which
+   * extractModLangData could then re-parse into an outdated CLD cache.
+   * Skips cleanup when the keep set is empty so a bad/partial file list can
+   * never wipe a working install.
+   */
+  function deleteOrphanModFiles(db, modId, keepSet, callback) {
+    var prefix = "mod:" + modId + ":";
+    var hasKeep = false;
+    for (var k in keepSet) {
+      if (Object.prototype.hasOwnProperty.call(keepSet, k)) {
+        hasKeep = true;
+        break;
+      }
+    }
+    if (!hasKeep) {
+      if (callback) callback(0);
+      return;
+    }
+    try {
+      var tx = db.transaction(ASSETS_STORE, "readwrite");
+      var store = tx.objectStore(ASSETS_STORE);
+      var cur = store.openCursor();
+      var count = 0;
+      cur.onsuccess = function (e) {
+        var c = e.target.result;
+        if (c) {
+          if (typeof c.key === "string" && c.key.indexOf(prefix) === 0) {
+            var rel = c.key.substring(prefix.length);
+            if (!keepSet[rel]) {
+              store.delete(c.key);
+              count++;
+            }
+          }
+          c.continue();
+        } else {
+          if (callback) callback(count);
+        }
+      };
+      cur.onerror = function () {
+        if (callback) callback(0);
+      };
+    } catch (e) {
+      if (callback) callback(0);
+    }
+  }
+
   // Active mod tracking (IDB + localStorage + SW postMessage)
 
   var _activeMod = null;
@@ -2039,8 +2090,33 @@
    *   - .csv          TCOAAL translator dialogue.csv (parsed to CLD schema)
    *   - .txt          TCOAAL translator dialogue.txt (parsed to CLD schema)
    */
-  function extractModLangData(db, modId, modEntry, callback) {
+  /**
+   * The dialogue file to actually parse for a mod. Normally modEntry.langFile,
+   * but if that path isn't among the files the mod ships (a mods.json drift we
+   * have hit before: langFile left at "dialogue.txt" after files switched to
+   * "dialogue.csv"), fall back to a dialogue.* that IS shipped, preferring
+   * csv > txt > loc/pld. Keeps a stale langFile from silently loading an
+   * orphaned/absent source.
+   */
+  function resolveEffectiveLangFile(modEntry) {
     var langFile = modEntry && modEntry.langFile;
+    var files = (modEntry && modEntry.files) || [];
+    if (langFile && files.indexOf(langFile) >= 0) return langFile;
+    var prefs = [
+      /(^|\/)dialogue\.csv$/i,
+      /(^|\/)dialogue\.txt$/i,
+      /(^|\/)dialogue\.(loc|pld)$/i,
+    ];
+    for (var p = 0; p < prefs.length; p++) {
+      for (var i = 0; i < files.length; i++) {
+        if (prefs[p].test(files[i])) return files[i];
+      }
+    }
+    return langFile || null;
+  }
+
+  function extractModLangData(db, modId, modEntry, callback) {
+    var langFile = resolveEffectiveLangFile(modEntry);
     if (!langFile) {
       callback();
       return;
@@ -2190,11 +2266,19 @@
             langParseVersion: LANG_PARSE_VERSION,
           });
           putAsset(db, "__mod_meta__:" + modId, meta, function () {
-            // Extract and cache mod lang data if langFile is specified
-            extractModLangData(db, modId, modEntry, function () {
-              onProgress({ percent: 100, message: "Installed!" });
-              _modStatus[modId] = { installed: true, version: version };
-              if (onDone) onDone({ version: version });
+            // Purge files this (re)install no longer ships so a stale source
+            // - e.g. an old dialogue.txt after a switch to dialogue.csv -
+            // can't be re-parsed into an outdated lang cache. Build the keep
+            // set from the current file list.
+            var keepSet = {};
+            for (var ki = 0; ki < files.length; ki++) keepSet[files[ki]] = 1;
+            deleteOrphanModFiles(db, modId, keepSet, function () {
+              // Extract and cache mod lang data if langFile is specified
+              extractModLangData(db, modId, modEntry, function () {
+                onProgress({ percent: 100, message: "Installed!" });
+                _modStatus[modId] = { installed: true, version: version };
+                if (onDone) onDone({ version: version });
+              });
             });
           });
           return;
@@ -3102,7 +3186,14 @@
         var self = this;
         var input = document.createElement("input");
         input.type = "file";
-        input.accept = ".rpgsave,.json";
+        // No `accept` filter on purpose: Android maps each accept entry to a
+        // MIME type and silently drops the ones it cannot resolve. ".json"
+        // resolves to application/json but ".rpgsave" has no registered MIME
+        // type, so the Android picker would restrict to JSON only and grey out
+        // every .rpgsave file. Format is validated from file content below
+        // (LZString/JSON detection + origin check), so no extension hint is
+        // needed for correctness -- leaving accept unset keeps every save
+        // selectable on all platforms.
         input.multiple = true;
         input.style.display = "none";
         input.addEventListener("change", function () {
