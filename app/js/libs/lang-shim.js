@@ -3170,6 +3170,60 @@
         return null;
       }
 
+      // A global save (global.rpgsave) is the game's globalInfo array, not a
+      // per-slot save object. Regular saves parse to an object; globals to an
+      // array. Used to divert globals out of the slot-import path.
+      function isGlobalSaveContents(contents) {
+        return Array.isArray(contents);
+      }
+
+      // Merge an imported global save into the current one (active scope).
+      //
+      // globalInfo layout: [0] is a meta object (.tags = ending/gallery/star
+      // unlocks, .autoSaves = autosave metadata, other keys = progression);
+      // [1..n] are the per-slot savefile entries. The imported global lists
+      // saves whose data is absent in this browser, so its save-slot list is
+      // discarded: only progression is taken. The current [1..n] entries and
+      // the current autosave metadata are preserved.
+      //
+      // Reads/writes raw via StorageManager (not DataManager.loadGlobalInfo /
+      // saveGlobalInfo): the UnlockAll plugin wraps those and strips tags it
+      // treats as injected, which would delete legitimately imported star tags.
+      // Raw access bypasses it and is symmetric with exportGlobalSave.
+      function applyGlobalSaveMerge(imp) {
+        var cur = [];
+        try {
+          var curJson = StorageManager.load(0);
+          if (curJson) cur = JsonEx.parse(curJson) || [];
+        } catch (e) {
+          cur = [];
+        }
+        if (!Array.isArray(cur)) cur = [];
+
+        var merged = cur.slice(); // keep current [0..n] (save list + autosaves)
+        var impSlot0 =
+          imp && imp[0] && typeof imp[0] === "object" ? imp[0] : null;
+        if (impSlot0) {
+          var newSlot0 = {};
+          for (var k in impSlot0) {
+            if (Object.prototype.hasOwnProperty.call(impSlot0, k)) {
+              newSlot0[k] = impSlot0[k];
+            }
+          }
+          // Autosave metadata is save-list state, not progression: keep the
+          // current one (imported autosaves reference files not present here).
+          var curSlot0 =
+            cur[0] && typeof cur[0] === "object" ? cur[0] : null;
+          if (curSlot0 && typeof curSlot0.autoSaves !== "undefined") {
+            newSlot0.autoSaves = curSlot0.autoSaves;
+          } else {
+            delete newSlot0.autoSaves;
+          }
+          merged[0] = newSlot0;
+        }
+        StorageManager.save(0, JsonEx.stringify(merged));
+      }
+
       // Import: load one or more save files. Accepts:
       //   - .rpgsave (native RPG Maker MV: LZString base64 of the JSON payload)
       //   - .json    (legacy web export: { savefileId, info, data } wrapper)
@@ -3235,6 +3289,7 @@
             var imported = 0;
             var failed = []; // bad/unreadable/non-save files
             var rejectedByOrigin = []; // name -> source mod label
+            var globalCandidate = null; // last global save seen (latest wins)
             var cursor = savefileId;
 
             for (var i = 0; i < results.length; i++) {
@@ -3264,6 +3319,14 @@
                 var contents = JsonEx.parse(json);
                 if (!contents) {
                   failed.push(r.name);
+                  continue;
+                }
+
+                // Global save (globalInfo array): not a per-slot save. Divert
+                // it to the replace-current-global prompt below instead of
+                // writing it into a slot. Last one in the batch wins.
+                if (isGlobalSaveContents(contents)) {
+                  globalCandidate = { name: r.name, contents: contents };
                   continue;
                 }
 
@@ -3308,16 +3371,20 @@
             if (imported > 0) {
               SoundManager.playLoad();
               self._listWindow.refresh();
-            } else {
+            } else if (!globalCandidate) {
+              // A global candidate provides its own feedback via the prompt
+              // below (playSave on accept), so only buzz when nothing at all
+              // was actionable.
               SoundManager.playBuzzer();
             }
 
             // Summary popup only when something needs explaining: a wrong-
             // origin file or an unreadable file. Silent on full success.
+            // Built now, shown after the global prompt resolves (if any).
+            var summaryLines = [];
             if (rejectedByOrigin.length > 0 || failed.length > 0) {
-              var lines = [];
               if (imported > 0) {
-                lines.push("Imported " + imported + " save(s).");
+                summaryLines.push("Imported " + imported + " save(s).");
               }
               if (rejectedByOrigin.length > 0) {
                 // Group rejections by source so the message stays short
@@ -3327,22 +3394,103 @@
                   bySrc[e.src] = (bySrc[e.src] || 0) + 1;
                 });
                 Object.keys(bySrc).forEach(function (src) {
-                  lines.push(
+                  summaryLines.push(
                     "Skipped " + bySrc[src] + " save(s) from " + src + ".",
                   );
                 });
-                lines.push("Switch context to import them.");
+                summaryLines.push("Switch context to import them.");
               }
               if (failed.length > 0) {
-                lines.push("Skipped " + failed.length + " unreadable file(s).");
+                summaryLines.push(
+                  "Skipped " + failed.length + " unreadable file(s).",
+                );
               }
-              self._showSaveInfoPopup(lines);
+            }
+            var showSummary = function () {
+              if (summaryLines.length > 0) self._showSaveInfoPopup(summaryLines);
+            };
+
+            // Global save: prompt to merge its progression into the current
+            // global. The prompt shows first; its resolution chains into the
+            // regular-import summary (if any).
+            if (globalCandidate) {
+              self._promptGlobalReplace(globalCandidate.contents, showSummary);
+            } else {
+              showSummary();
             }
           });
         });
         document.body.appendChild(input);
         input.click();
         document.body.removeChild(input);
+      };
+
+      // Prompt to replace the current global save with an imported one. Uses a
+      // dedicated confirm window so the delete flow's window is untouched.
+      // `afterFn` runs once the prompt resolves (either choice) - it chains the
+      // regular-import summary popup.
+      Scene_File.prototype._promptGlobalReplace = function (imp, afterFn) {
+        this._pendingGlobalContents = imp;
+        this._pendingGlobalAfter = afterFn || function () {};
+        if (!this._globalConfirmWindow) this._createGlobalConfirmWindow();
+        var win = this._globalConfirmWindow;
+        win.setQuestion([
+          "You imported a global save file:",
+          "Do you want to replace your current one?",
+        ]);
+        win.x = (Graphics.boxWidth - win.width) / 2;
+        win.y = (Graphics.boxHeight - win.height) / 2;
+        if (this._listWindow) this._listWindow.deactivate();
+        win.show();
+        win.open();
+        win.activate();
+        win.select(1); // Default to "No"
+      };
+
+      Scene_File.prototype._createGlobalConfirmWindow = function () {
+        this._globalConfirmWindow = new Window_SaveConfirm(0, 0);
+        this._globalConfirmWindow.setHandler(
+          "confirm",
+          this._onGlobalConfirmYes.bind(this),
+        );
+        this._globalConfirmWindow.setHandler(
+          "cancel",
+          this._onGlobalConfirmNo.bind(this),
+        );
+        this._globalConfirmWindow.hide();
+        this._globalConfirmWindow.close();
+        this.addWindow(this._globalConfirmWindow);
+      };
+
+      Scene_File.prototype._onGlobalConfirmYes = function () {
+        var imp = this._pendingGlobalContents;
+        var after = this._pendingGlobalAfter;
+        this._pendingGlobalContents = null;
+        this._pendingGlobalAfter = null;
+        try {
+          applyGlobalSaveMerge(imp);
+          SoundManager.playSave();
+          // Replacing the global rewrites globalInfo, which drives the slot
+          // list: redraw it.
+          if (this._listWindow) this._listWindow.refresh();
+        } catch (e) {
+          console.error("[lang-shim] Global save merge failed:", e);
+          SoundManager.playBuzzer();
+        }
+        this._globalConfirmWindow.close();
+        this._globalConfirmWindow.hide();
+        if (this._listWindow) this._listWindow.activate();
+        if (after) after.call(this);
+      };
+
+      Scene_File.prototype._onGlobalConfirmNo = function () {
+        var after = this._pendingGlobalAfter;
+        this._pendingGlobalContents = null;
+        this._pendingGlobalAfter = null;
+        this._globalConfirmWindow.close();
+        this._globalConfirmWindow.hide();
+        if (this._listWindow) this._listWindow.activate();
+        if (after) after.call(this);
       };
 
       // Delete: remove save after confirmation. Same DRM-staleness avoidance
@@ -3465,9 +3613,21 @@
       Window_SaveConfirm.prototype.constructor = Window_SaveConfirm;
 
       Window_SaveConfirm.prototype.initialize = function (x, y) {
-        this._actionText = "";
+        // Question rendered above the Yes/No commands. Held as an array so the
+        // same window can pose a one-line delete prompt or a multi-line
+        // confirmation (e.g. the global-save import prompt). Must be set before
+        // super-initialize since windowHeight() reads its length.
+        this._questionLines = [];
         Window_Command.prototype.initialize.call(this, x, y);
         this.openness = 0;
+      };
+
+      // Multi-line question. Re-lays-out (height depends on line count) and
+      // redraws. refresh() rebuilds the contents bitmap at the new height.
+      Window_SaveConfirm.prototype.setQuestion = function (lines) {
+        this._questionLines = Array.isArray(lines) ? lines : [String(lines)];
+        this.height = this.windowHeight();
+        this.refresh();
       };
 
       Window_SaveConfirm.prototype.setAction = function (action, label) {
@@ -3475,17 +3635,20 @@
         // Backwards-compatible with the old numeric arg: a bare number
         // still produces "Delete Save N?".
         var name = typeof label === "number" ? "Save " + label : String(label);
-        this._actionText = "Delete " + name + "?";
-        this.refresh();
+        this.setQuestion(["Delete " + name + "?"]);
       };
 
       Window_SaveConfirm.prototype.windowWidth = function () {
-        return 360;
+        // Wide enough for the longest global-import prompt line without the
+        // browser squishing it to fit maxWidth.
+        return 460;
       };
 
       Window_SaveConfirm.prototype.windowHeight = function () {
-        // Question text line + gap + 2 command rows + padding
-        return this.fittingHeight(3) + 8;
+        // Question lines + gap + 2 command rows + padding. Guard against the
+        // empty initial state (super-initialize calls this before setQuestion).
+        var qlines = Math.max(1, (this._questionLines || []).length);
+        return this.fittingHeight(qlines + 2) + 8;
       };
 
       Window_SaveConfirm.prototype.makeCommandList = function () {
@@ -3498,15 +3661,19 @@
       };
 
       Window_SaveConfirm.prototype.drawAllItems = function () {
-        // Draw the question text above the commands
+        // Draw each question line above the commands
         var pad = this.textPadding();
-        this.drawText(
-          this._actionText || "",
-          pad,
-          0,
-          this.contentsWidth() - pad * 2,
-          "center",
-        );
+        var lh = this.lineHeight();
+        var lines = this._questionLines || [];
+        for (var q = 0; q < lines.length; q++) {
+          this.drawText(
+            lines[q],
+            pad,
+            q * lh,
+            this.contentsWidth() - pad * 2,
+            "center",
+          );
+        }
         // Draw commands below
         for (var i = 0; i < this.maxItems(); i++) {
           this.drawItem(i);
@@ -3516,7 +3683,8 @@
       Window_SaveConfirm.prototype.itemRect = function (index) {
         var rect = Window_Command.prototype.itemRect.call(this, index);
         // Offset commands below the question text
-        rect.y += this.lineHeight() + 8;
+        var qlines = Math.max(1, (this._questionLines || []).length);
+        rect.y += qlines * this.lineHeight() + 8;
         return rect;
       };
 

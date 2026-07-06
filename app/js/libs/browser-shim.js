@@ -923,275 +923,57 @@
       };
     }
 
-    // Missing-asset resilience
-    // Stock RPG Maker halts the entire game the first time it cannot load an
-    // asset: ResourceHandler exhausts its retries, then Graphics.printLoadingError
-    // + SceneManager.stop() paint the blocking "Retry?" screen (and the
-    // AudioStreaming plugin routes a missing track through
-    // SceneManager.catchException - the red crash screen). In a browser build a
-    // single absent file - a mod that forgot an asset, a partial import - would
-    // otherwise brick the whole session. Instead we degrade gracefully:
-    //   - never stop/crash the scene on a load failure;
-    //   - background/UI images (pictures, parallaxes, titles, system, ...)
-    //     resolve to an empty transparent bitmap (show nothing);
-    //   - character-style sprites (characters, faces, enemies, animations,
-    //     tilesets, ...) resolve to a magenta/black checkerboard so the gap is
-    //     obvious;
-    //   - audio fails silently (plays nothing).
-    // A top-left toast names each missing file for a few seconds; that visible
-    // part can be switched off from Options ("Missing-asset alerts"). The game
-    // never crashes either way.
-    (function installMissingAssetHandling() {
-      if (typeof Bitmap === "undefined") return;
-
-      var CHECKER_W = 48; // one tile/character frame; the classic missing-tex box
-      var CHECKER_H = 48;
-      var TOAST_MS = 4000;
-      var THROTTLE_MS = 3000;
-      var MAX_LINES = 6;
-      var _lastShown = {}; // url -> timestamp, to dedupe repeated requests
-      var _toastBox = null;
-
-      function alertsEnabled() {
-        if (
-          typeof ConfigManager !== "undefined" &&
-          typeof ConfigManager.missingAssetAlerts === "boolean"
-        ) {
-          return ConfigManager.missingAssetAlerts;
-        }
-        try {
-          return localStorage.getItem("_missingAssetAlerts") !== "false";
-        } catch (e) {
-          return true;
-        }
-      }
-
-      function ensureToastBox() {
-        if (_toastBox && _toastBox.parentNode) return _toastBox;
-        if (typeof document === "undefined" || !document.body) return null;
-        _toastBox = document.createElement("div");
-        var s = _toastBox.style;
-        s.position = "fixed";
-        s.top = "8px";
-        s.left = "8px";
-        s.zIndex = "2147483647";
-        s.pointerEvents = "none"; // never intercept taps (see TouchInput gating)
-        s.font = "12px monospace";
-        s.maxWidth = "70%";
-        document.body.appendChild(_toastBox);
-        return _toastBox;
-      }
-
-      function shortName(url) {
-        var u = String(url || "").split("?")[0];
-        var parts = u.split("/");
-        var tail = parts.slice(-2).join("/");
-        return tail || u;
-      }
-
-      function kindFromUrl(url) {
-        var u = String(url || "")
-          .toLowerCase()
-          .split("?")[0];
-        if (/\.(ogg|m4a|mp3|wav|aac|flac)$/.test(u) || /\/audio\//.test(u)) {
-          return "audio";
-        }
-        return "image";
-      }
-
-      function report(kind, url) {
-        try {
-          console.warn("[missing-asset] " + kind + ": " + url);
-        } catch (e) {}
-        if (!alertsEnabled()) return;
-        var now = Date.now();
-        if (_lastShown[url] && now - _lastShown[url] < THROTTLE_MS) return;
-        _lastShown[url] = now;
-        var box = ensureToastBox();
-        if (!box) return;
-        while (box.childNodes.length >= MAX_LINES) {
-          box.removeChild(box.firstChild);
-        }
-        var line = document.createElement("div");
-        line.textContent = "Missing " + kind + ": " + shortName(url);
-        var ls = line.style;
-        ls.margin = "2px 0";
-        ls.padding = "3px 7px";
-        ls.background = "rgba(0,0,0,0.78)";
-        ls.color = "#ff5cf0";
-        ls.borderLeft = "3px solid #ff00ff";
-        ls.borderRadius = "3px";
-        ls.whiteSpace = "nowrap";
-        ls.overflow = "hidden";
-        ls.textOverflow = "ellipsis";
-        box.appendChild(line);
-        setTimeout(function () {
-          if (line.parentNode) line.parentNode.removeChild(line);
-        }, TOAST_MS);
-      }
-
-      // Exposed so other shims/plugins can report a missing asset too.
-      window.MissingAssets = { report: report, enabled: alertsEnabled };
-
-      function isSpriteAsset(url) {
-        return /\/img\/(characters|faces|enemies|sv_actors|sv_enemies|animations|tilesets)\//i.test(
-          String(url || ""),
-        );
-      }
-
-      function paintChecker(bitmap) {
-        try {
-          bitmap.resize(CHECKER_W, CHECKER_H);
-          var cell = 16;
-          for (var y = 0; y < CHECKER_H; y += cell) {
-            for (var x = 0; x < CHECKER_W; x += cell) {
-              var on = (x / cell + y / cell) % 2 === 0;
-              bitmap.fillRect(x, y, cell, cell, on ? "#ff00ff" : "#000000");
-            }
-          }
-        } catch (e) {}
-      }
-
-      // Bitmap load failure -> graceful fallback instead of the 'error' state
-      // that stock code escalates into the freeze screen.
-      Bitmap.prototype._onError = function () {
-        var url = this._url || (this._image && this._image.src) || "";
-        try {
-          if (this._image) {
-            if (this._loadListener)
-              this._image.removeEventListener("load", this._loadListener);
-            if (this._errorListener)
-              this._image.removeEventListener("error", this._errorListener);
-          }
-        } catch (e) {}
-        // Drop the failed <img> so the width/height getters (and _baseTexture)
-        // read from our substitute canvas instead of the 0x0 broken image -
-        // otherwise the checkerboard would render at zero size.
-        this._image = null;
-        report("image", url);
-        if (isSpriteAsset(url)) {
-          paintChecker(this);
-        } else {
-          // Show nothing: a valid, transparent 1x1 bitmap. Downstream blt/draw
-          // is a no-op and isReady() returns true so the scene proceeds.
-          try {
-            this.resize(1, 1);
-          } catch (e) {}
-        }
-        this._loadingState = "loaded";
-        try {
-          this._callLoadListeners();
-        } catch (e) {}
-      };
-
-      // ResourceHandler escalation -> resign only, never freeze the scene.
-      // (Same retry cadence, but no printLoadingError / SceneManager.stop /
-      // reloader push.) Covers images and video.
-      if (
-        typeof ResourceHandler !== "undefined" &&
-        ResourceHandler.createLoader
-      ) {
-        ResourceHandler.createLoader = function (
-          url,
-          retryMethod,
-          resignMethod,
-          retryInterval,
-        ) {
-          retryInterval = retryInterval || this._defaultRetryInterval || [];
-          var retryCount = 0;
-          return function () {
-            if (retryCount < retryInterval.length) {
-              setTimeout(retryMethod, retryInterval[retryCount]);
-              retryCount++;
-            } else if (resignMethod) {
-              resignMethod();
-            }
-          };
-        };
-      }
-
-      // Never paint the blocking loading-error screen.
-      if (typeof Graphics !== "undefined" && Graphics.printLoadingError) {
-        Graphics.printLoadingError = function () {};
-      }
-
-      // AudioStreaming throws Error('Failed to load: URL') for a missing track
-      // and routes it through SceneManager.catchException (red crash screen).
-      // Swallow ONLY those asset-load errors so the track just stays silent;
-      // any real exception still surfaces normally.
-      if (typeof SceneManager !== "undefined" && SceneManager.catchException) {
-        var _origCatchException = SceneManager.catchException;
-        SceneManager.catchException = function (e) {
-          var msg = e && e.message ? String(e.message) : "";
-          var m = /^Failed to load:\s*(.*)$/.exec(msg);
-          if (m) {
-            report(kindFromUrl(m[1]), m[1] || "");
-            return; // keep the game running
-          }
-          return _origCatchException.apply(this, arguments);
-        };
-      }
-    })();
-
-    // Options row (default ON) to toggle the visible missing-asset alerts.
-    if (typeof ConfigManager !== "undefined") {
-      var _maStored = null;
-      try {
-        _maStored = localStorage.getItem("_missingAssetAlerts");
-      } catch (e) {}
-      ConfigManager.missingAssetAlerts = _maStored !== "false";
-
-      var _ma_makeData = ConfigManager.makeData;
-      if (_ma_makeData) {
-        ConfigManager.makeData = function () {
-          var config = _ma_makeData.call(this);
-          config.missingAssetAlerts = this.missingAssetAlerts;
-          return config;
-        };
-      }
-      var _ma_applyData = ConfigManager.applyData;
-      if (_ma_applyData) {
-        ConfigManager.applyData = function (config) {
-          _ma_applyData.call(this, config);
-          this.missingAssetAlerts =
-            config && config.missingAssetAlerts !== undefined
-              ? !!config.missingAssetAlerts
-              : this.missingAssetAlerts !== false;
-          try {
-            localStorage.setItem(
-              "_missingAssetAlerts",
-              this.missingAssetAlerts ? "true" : "false",
-            );
-          } catch (e) {}
-        };
-      }
-    }
-
+    // The DRM payload replaces Bitmap._requestImage with an XHR loader whose
+    // onload only proceeds when `status < 400` and has NO else branch. A
+    // missing asset served by the SW falls through to network -> HTTP 404,
+    // which fires xhr.onload (not onerror) with status 404, so nothing runs:
+    // the bitmap is stranded in 'decrypting' forever, ImageManager.isReady()
+    // never turns true, and the game hangs on the loading screen. (xhr.onerror
+    // only covers network failures, not 404s.)
+    //
+    // In browser mode the SW already decrypts every asset (Crypto.dekit is an
+    // identity pass-through here), so the DRM's XHR+dekit round-trip is
+    // redundant. Restore stock <img>.src loading: a 404 then fires the native
+    // <img> 'error' event -> this._loader (retry) or the stock Bitmap._onError.
+    // `cld:` URLs (in-memory language blobs) are delegated to
+    // the DRM implementation, which reads them from App memory rather than the
+    // network.
     if (
-      typeof Window_Options !== "undefined" &&
-      Window_Options.prototype.makeCommandList
+      typeof Bitmap !== "undefined" &&
+      typeof Bitmap.prototype._requestImage === "function"
     ) {
-      var _ma_makeCmdList = Window_Options.prototype.makeCommandList;
-      Window_Options.prototype.makeCommandList = function () {
-        _ma_makeCmdList.call(this);
-        this.addCommand("Missing-asset alerts", "missingAssetAlerts");
+      var _drmRequestImage = Bitmap.prototype._requestImage;
+      Bitmap.prototype._requestImage = function (url) {
+        var decoded;
+        try {
+          decoded = decodeURIComponent(url);
+        } catch (e) {
+          decoded = url;
+        }
+        if (decoded.indexOf("cld:") === 0) {
+          return _drmRequestImage.call(this, url);
+        }
+        if (this._decodeAfterRequest && !this._loader) {
+          this._loader = ResourceHandler.createLoader(
+            decoded,
+            this._requestImage.bind(this, decoded),
+            this._onError.bind(this),
+          );
+        }
+        this._image = new Image();
+        this._url = decoded;
+        this._loadingState = "requesting";
+        this._image.src = decoded;
+        this._image.addEventListener(
+          "load",
+          (this._loadListener = Bitmap.prototype._onLoad.bind(this)),
+        );
+        this._image.addEventListener(
+          "error",
+          (this._errorListener =
+            this._loader || Bitmap.prototype._onError.bind(this)),
+        );
       };
-      // Mirror to localStorage the instant it is toggled so the toast module
-      // (and the next session) agree even before ConfigManager.save() runs.
-      var _ma_setConfig = Window_Options.prototype.setConfigValue;
-      if (_ma_setConfig) {
-        Window_Options.prototype.setConfigValue = function (symbol, value) {
-          _ma_setConfig.call(this, symbol, value);
-          if (symbol === "missingAssetAlerts") {
-            try {
-              localStorage.setItem(
-                "_missingAssetAlerts",
-                value ? "true" : "false",
-              );
-            } catch (e) {}
-          }
-        };
-      }
     }
 
     // Uncap save slots; show max(50, saveCount + 5) in the save/load list.
