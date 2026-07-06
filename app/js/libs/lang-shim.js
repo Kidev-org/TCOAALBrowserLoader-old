@@ -3221,7 +3221,14 @@
           }
           merged[0] = newSlot0;
         }
-        StorageManager.save(0, JsonEx.stringify(merged));
+        // Stock DataManager stores globalInfo with plain JSON.stringify and
+        // reads it back with JSON.parse. JsonEx.stringify would wrap every
+        // array/object as {"@c":N,"@a":[...]} metadata, which plain JSON.parse
+        // leaves intact -- so globalInfo[0].tags would come back as an object,
+        // and the DRM's globalTag() (tags.includes(...)) throws at the title
+        // screen. Match the stock format exactly. (The read above still uses
+        // JsonEx.parse so it can decode a store previously corrupted this way.)
+        StorageManager.save(0, JSON.stringify(merged));
       }
 
       // Import: load one or more save files. Accepts:
@@ -3467,12 +3474,14 @@
         var after = this._pendingGlobalAfter;
         this._pendingGlobalContents = null;
         this._pendingGlobalAfter = null;
+        var merged = false;
         try {
           applyGlobalSaveMerge(imp);
           SoundManager.playSave();
           // Replacing the global rewrites globalInfo, which drives the slot
           // list: redraw it.
           if (this._listWindow) this._listWindow.refresh();
+          merged = true;
         } catch (e) {
           console.error("[lang-shim] Global save merge failed:", e);
           SoundManager.playBuzzer();
@@ -3480,6 +3489,23 @@
         this._globalConfirmWindow.close();
         this._globalConfirmWindow.hide();
         if (this._listWindow) this._listWindow.activate();
+        if (merged) {
+          // The DRM reads globalInfo tags (vision-room unlocks, gallery/ending
+          // progression, title-menu commands) at boot / title-command build
+          // time. Merging them into a live session does not retroactively add
+          // those entries, so reload once the user acknowledges: the fresh
+          // boot re-reads the merged globalInfo and the unlocked content
+          // appears. The reload supersedes the regular-import summary (a global
+          // import is the batch's last action, and the reload re-derives the
+          // save list anyway).
+          this._showSaveInfoPopup(
+            ["Global save imported.", "Reloading to apply unlocked content..."],
+            function () {
+              window.location.reload();
+            },
+          );
+          return;
+        }
         if (after) after.call(this);
       };
 
@@ -3693,8 +3719,12 @@
       };
 
       // Info popup (single OK button) for import rejection, etc.
-      Scene_File.prototype._showSaveInfoPopup = function (lines) {
+      Scene_File.prototype._showSaveInfoPopup = function (lines, onDismiss) {
         if (!this._saveInfoWindow) this._createSaveInfoWindow();
+        // One-shot callback fired when the user acknowledges the popup (OK or
+        // cancel). Used by the global-import path to reload after the notice.
+        this._saveInfoOnDismiss =
+          typeof onDismiss === "function" ? onDismiss : null;
         this._saveInfoWindow.setMessage(lines);
         this._saveInfoWindow.x =
           (Graphics.boxWidth - this._saveInfoWindow.width) / 2;
@@ -3721,6 +3751,9 @@
         this._saveInfoWindow.close();
         this._saveInfoWindow.hide();
         if (this._listWindow) this._listWindow.activate();
+        var cb = this._saveInfoOnDismiss;
+        this._saveInfoOnDismiss = null;
+        if (cb) cb.call(this);
       };
 
       // Info dialog window with a multi-line message and a single OK button.

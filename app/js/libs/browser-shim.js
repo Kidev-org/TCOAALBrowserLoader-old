@@ -1169,6 +1169,13 @@
     ) {
       var _origSceneBootStart = Scene_Boot.prototype.start;
       Scene_Boot.prototype.start = function () {
+        // Repair a JsonEx-corrupted globalInfo store BEFORE anything reads it
+        // (upgradeRecoveredSaveInfo, and the title screen's globalTag()).
+        try {
+          healGlobalInfoStore();
+        } catch (e) {
+          console.warn("[browser-shim] globalInfo heal failed:", e);
+        }
         try {
           upgradeRecoveredSaveInfo();
         } catch (e) {
@@ -1554,6 +1561,46 @@
     if (!entry.characters || !entry.characters.length) return true;
     if (!entry.playtime) return true;
     return false;
+  }
+
+  // One-time repair for globalInfo stores corrupted by a past bug where the
+  // global-save import merge serialized slot 0 with JsonEx.stringify instead
+  // of plain JSON.stringify. JsonEx wraps every array/object as
+  // {"@c":N,"@a":[...]} metadata; stock DataManager.loadGlobalInfo reads the
+  // store back with plain JSON.parse, leaving that metadata intact. The DRM's
+  // globalTag() then runs globalInfo[0].tags.includes(...) on what is now an
+  // object -> "includes is not a function", crashing while the title command
+  // list is built -- which bricks the game before it can even reach the load
+  // menu to re-import a clean save. Detect the JsonEx wrapper and rewrite the
+  // store as plain JSON (JsonEx.parse strips the metadata; JSON.stringify
+  // re-persists it in the format the engine expects). No-op on healthy stores.
+  function healGlobalInfoStore() {
+    if (
+      typeof StorageManager === "undefined" ||
+      typeof StorageManager.load !== "function" ||
+      typeof JsonEx === "undefined" ||
+      !JsonEx.parse
+    ) {
+      return;
+    }
+    var raw;
+    try {
+      raw = StorageManager.load(0);
+    } catch (e) {
+      return;
+    }
+    if (!raw || typeof raw !== "string") return;
+    // JsonEx tags every serialized container with a numeric "@c" id (and
+    // arrays additionally with an "@a" payload key). Both surface as JSON
+    // object keys, which plain JSON.stringify never emits, so their presence
+    // uniquely marks a JsonEx-serialized store.
+    if (!/"@[ca]":/.test(raw)) return;
+    try {
+      var cleaned = JSON.stringify(JsonEx.parse(raw));
+      StorageManager.save(0, cleaned);
+    } catch (e) {
+      console.warn("[browser-shim] globalInfo heal failed:", e);
+    }
   }
 
   // Walk globalInfo's autoSaves dict and numeric save slots, replacing
