@@ -238,7 +238,15 @@
            matching modding.html's inset:0 .bg - keeps the bg from shifting x
            between the two pages. */
         width: 100%;
+        /* dvh tracks the visible viewport as mobile browser chrome
+           shows/hides; plain vh is the large (chrome-hidden) viewport, so on
+           first paint (address bar visible) it overflows the real screen and
+           anything pinned to this box's bottom edge (e.g. .top-links'
+           bottom:0 in the mobile media query) renders below the fold: never
+           visible on a real phone even though it's fine in DevTools device
+           emulation, which has no address bar eating into the viewport. */
         height: 100vh;
+        height: 100dvh;
         display: flex;
         justify-content: center;
         background:
@@ -469,6 +477,7 @@
           clamp(12px, 2vmin, 28px);
         text-align: center;
         height: 100vh;
+        height: 100dvh;
         position: relative;
         overflow-y: auto;
         width: min(960px, 96vw);
@@ -1367,6 +1376,7 @@
         position: fixed;
         inset: 0;
         height: 100vh;
+        height: 100dvh;
         box-sizing: border-box;
         overflow-y: auto;
         background: #060006e8;
