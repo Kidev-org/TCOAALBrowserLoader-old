@@ -1121,6 +1121,15 @@
       .confirm-dialog-content p strong {
         color: var(--yellow);
       }
+      .confirm-dialog .wipe-copy {
+        display: none;
+      }
+      .confirm-dialog.wipe-saves .keep-copy {
+        display: none;
+      }
+      .confirm-dialog.wipe-saves .wipe-copy {
+        display: inline;
+      }
       .confirm-saves-msg {
         font-size: clamp(12px, 1vmin, 14px);
         text-align: center;
@@ -1350,6 +1359,105 @@
         display: none;
       }
 
+      /* Diagnostic report view (#report route). Plain div, not a shadow
+         root - the report is one screen, not a nested-tab tool like
+         #modding, so it doesn't need that machinery. */
+      #report-panel {
+        display: none;
+        position: fixed;
+        inset: 0;
+        height: 100vh;
+        box-sizing: border-box;
+        overflow-y: auto;
+        background: #060006e8;
+        color: rgba(255, 255, 255, 0.92);
+        width: min(720px, 96vw);
+        margin: 0 auto;
+        padding: clamp(20px, 4vmin, 48px) clamp(16px, 3vmin, 24px)
+          clamp(40px, 6vh, 64px);
+      }
+      body.show-report #report-panel {
+        display: block;
+      }
+      body.show-report .overlay {
+        display: none;
+      }
+      .report-summary {
+        font-size: clamp(12.5px, 1.5vmin, 14.5px);
+        line-height: 1.5;
+        text-align: left;
+        margin-bottom: clamp(16px, 2.4vmin, 28px);
+      }
+      .report-summary.ok {
+        text-align: center;
+      }
+      .report-summary-line {
+        margin: 0 0 6px;
+        color: rgba(255, 255, 255, 0.82);
+      }
+      .report-summary-line:last-child {
+        margin-bottom: 0;
+      }
+      .report-summary-line.primary {
+        font-weight: bold;
+        font-size: clamp(14.5px, 1.9vmin, 18px);
+      }
+      .report-summary.warn .report-summary-line.primary {
+        color: var(--yellow);
+      }
+      .report-summary.ok .report-summary-line.primary {
+        color: var(--green);
+      }
+      .report-section {
+        border-top: 1px solid rgba(255, 255, 255, 0.15);
+        padding: clamp(10px, 1.4vmin, 16px) 0;
+      }
+      .report-section h3 {
+        font-size: clamp(13px, 1.6vmin, 16px);
+        margin: 0 0 8px;
+        color: rgba(255, 255, 255, 0.75);
+      }
+      .report-section .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: clamp(12px, 1.4vmin, 15px);
+        color: rgba(255, 255, 255, 0.85);
+        padding: 2px 0;
+      }
+      .report-section .row.broken {
+        color: var(--yellow);
+      }
+      .report-list {
+        max-height: 220px;
+        overflow-y: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: clamp(11px, 1.2vmin, 13px);
+        color: #c8a;
+        background: rgba(0, 0, 0, 0.4);
+        padding: 8px 12px;
+        border-radius: 4px;
+        white-space: pre;
+        margin-top: 6px;
+      }
+      .report-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        margin-top: clamp(16px, 2vmin, 24px);
+      }
+      .report-tech {
+        white-space: pre-wrap;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.55);
+        background: rgba(0, 0, 0, 0.4);
+        padding: 10px 12px;
+        border-radius: 4px;
+        margin-top: 8px;
+      }
+
       /* ----- View transition (loader <-> modding), loader side. Mirror of the
          modding shadow-side rules: only the loader foreground moves (opacity +
          small vertical drift); the fixed background stays put. .view-animating
@@ -1432,6 +1540,9 @@
           var MH = ["modding", "install-mods", "create-project", "build-mod", "download-game"];
           if (MH.indexOf(location.hash.replace(/^#/, "")) !== -1) {
             document.body.classList.add("show-modding");
+          }
+          if (location.hash.replace(/^#/, "") === "report") {
+            document.body.classList.add("show-report");
           }
           if (/TCOAALApp\//.test(navigator.userAgent)) {
             document.body.classList.add("android-app");
@@ -1803,7 +1914,7 @@
                   <button
                     class="action-btn compact danger"
                     id="btn-clear"
-                    onclick="askClearAll()"
+                    onclick="askClearAll(event)"
                   >
                     <span class="android-hide">Clear browser data</span>
                     <span class="android-only">Clear game data</span>
@@ -1857,13 +1968,13 @@
           <div class="confirm-dialog-content">
             <h2>Clear all game data?</h2>
             <p>
-              <span class="android-hide">This will erase the imported game
-              files <strong>and your save files</strong> from this browser.
-              This cannot be undone.</span>
-              <span class="android-only">This will erase the imported game
+              <span class="keep-copy">This will erase the imported game
               files from this browser.
               <strong>Your save files will be kept.</strong> This cannot be
               undone.</span>
+              <span class="wipe-copy">This will erase the imported game
+              files <strong>and your save files</strong> from this browser.
+              This cannot be undone.</span>
             </p>
             <p class="confirm-saves-msg android-hide" id="confirm-saves-msg"></p>
             <p class="confirm-saves-status android-hide" id="confirm-saves-status"></p>
@@ -1919,6 +2030,7 @@
          divergent rules). Shown by the #modding route; see the scripts at the
          foot of <body>. -->
     <div id="modding-host"></div>
+    <div id="report-panel"></div>
     <template id="modding-template">
       <style>
       :root {
@@ -5917,7 +6029,10 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // "Clear data" (button) -> open the destructive confirmation
       // dialog. The actual wipe happens in performClearAndReimport(),
       // called by the dialog's "Wipe everything" button.
-      function askClearAll() {
+      var _pendingWipeSaves = false;
+
+      function askClearAll(event) {
+        _pendingWipeSaves = !!(event && (event.ctrlKey || event.metaKey));
         const $d = document.getElementById("confirm-dialog");
         const $msg = document.getElementById("confirm-saves-msg");
         const $status = document.getElementById("confirm-saves-status");
@@ -5937,7 +6052,16 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         }
         const $download = document.getElementById("btn-confirm-download");
         if ($download) $download.disabled = saves.length === 0;
-        if ($d) $d.classList.add("visible");
+        if ($d) {
+          $d.classList.add("visible");
+          $d.classList.toggle("wipe-saves", _pendingWipeSaves);
+        }
+        const $wipeBtn = document.getElementById("btn-confirm-wipe");
+        if ($wipeBtn) {
+          $wipeBtn.textContent = _pendingWipeSaves
+            ? "Wipe EVERYTHING, including saves"
+            : "Wipe game data";
+        }
       }
 
       function hideConfirmClearDialog() {
@@ -5946,13 +6070,15 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       }
 
       function confirmClearAll() {
+        const wipeSaves = _pendingWipeSaves;
+        _pendingWipeSaves = false;
         hideConfirmClearDialog();
-        performClearAndReimport();
+        performClearAndReimport(wipeSaves);
       }
 
       // Wipe IDB/SW/caches/localStorage and reload into a fresh loader.
       // Mirrors resetAndRetry but stays on /loader.html.
-      async function performClearAndReimport() {
+      async function performClearAndReimport(wipeSaves) {
         const isAndroid = document.body.classList.contains("android-app");
         const $btnClear = document.getElementById("btn-clear");
         if ($btnClear) {
@@ -5973,17 +6099,21 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           } catch (e) {}
         }
         try {
-          if (isAndroid) {
-            // On Android, preserve save keys (RPG File*, RPG Global, etc.)
-            // so the user's progress survives a game-data wipe.
+          if (wipeSaves) {
+            localStorage.clear();
+          } else {
+            // Preserve save keys (RPG File*, RPG Global, etc.) on every
+            // platform so a routine "Clear browser data" never costs the
+            // user their progress. Only an explicit ctrl/cmd+click
+            // (wipeSaves) clears them too.
             var keysToRemove = [];
             for (var i = 0; i < localStorage.length; i++) {
               var k = localStorage.key(i);
               if (k && !SAVE_KEY_RE.test(k)) keysToRemove.push(k);
             }
-            keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
-          } else {
-            localStorage.clear();
+            keysToRemove.forEach(function (k) {
+              localStorage.removeItem(k);
+            });
           }
         } catch (e) {}
 
@@ -6036,9 +6166,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             };
           });
         }
-        const dbsToDrop = isAndroid
-          ? ["tcoaal", "tcoaal-translations"]
-          : ["tcoaal", "tcoaal-saves", "tcoaal-translations"];
+        const dbsToDrop = wipeSaves
+          ? ["tcoaal", "tcoaal-saves", "tcoaal-translations"]
+          : ["tcoaal", "tcoaal-translations"];
         const results = await Promise.all(dbsToDrop.map((n) => dropDb(n)));
 
         const clearLabel = isAndroid ? "Clear game data" : "Clear browser data";
@@ -6267,6 +6397,33 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // Each entry is the raw localStorage value (LZString-compressed
       // RPG Maker save text) under its canonical .rpgsave filename, so
       // the contents are interchangeable with native RPG Maker MV saves.
+      // Chunked to avoid blowing the call stack on String.fromCharCode.apply
+      // for a large zip (a spread/apply over tens of thousands of args).
+      function uint8ToBase64(bytes) {
+        var CHUNK = 0x8000;
+        var binary = "";
+        for (var i = 0; i < bytes.length; i += CHUNK) {
+          binary += String.fromCharCode.apply(
+            null,
+            bytes.subarray(i, i + CHUNK),
+          );
+        }
+        return btoa(binary);
+      }
+
+      // The Android app's WebView can't turn a blob: URL + <a download>
+      // click into an actual download (no DownloadListener is registered,
+      // and blob: URLs have no host for UrlPolicy to recognize as internal,
+      // so the click is silently dropped as an unhandled external Intent).
+      // When the native bridge is present, hand the file to it instead -
+      // see ExportBridge.kt (android/) for the native side.
+      function androidExportBridge() {
+        return typeof window.AndroidExportBridge !== "undefined" &&
+          typeof window.AndroidExportBridge.exportFile === "function"
+          ? window.AndroidExportBridge
+          : null;
+      }
+
       function downloadSavesZip() {
         const $status = document.getElementById("confirm-saves-status");
         const saves = collectSaveEntries();
@@ -6299,17 +6456,23 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             pad(d.getHours()) +
             "h" +
             pad(d.getMinutes());
-          const blob = new Blob([zip], { type: "application/zip" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "TCOAAL-saves-" + ts + ".zip";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          // Revoke after a delay: some browsers race the download
-          // dispatch with synchronous revocation.
-          setTimeout(() => URL.revokeObjectURL(url), 30000);
+          const filename = "TCOAAL-saves-" + ts + ".zip";
+          const bridge = androidExportBridge();
+          if (bridge) {
+            bridge.exportFile(uint8ToBase64(zip), filename, "application/zip");
+          } else {
+            const blob = new Blob([zip], { type: "application/zip" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // Revoke after a delay: some browsers race the download
+            // dispatch with synchronous revocation.
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
+          }
 
           if ($status) {
             $status.textContent =
@@ -6516,6 +6679,765 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           }
         }
       })();
+
+      // Diagnostic report (#report route).
+
+      function readCrashPayload() {
+        var raw;
+        try {
+          raw = sessionStorage.getItem("__crash_report__");
+        } catch (e) {
+          return null;
+        }
+        if (!raw) return null;
+        try {
+          sessionStorage.removeItem("__crash_report__");
+        } catch (e) {}
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function buildBaseGameSection(db) {
+        var oldInfo = await detectOldInstall(db);
+        if (!oldInfo) oldInfo = await detectOutdatedRemaster(db);
+        if (oldInfo) {
+          return { skipped: oldInfo, health: null };
+        }
+        var health = await runHealthcheck(db);
+        return { skipped: null, health: health };
+      }
+
+      // Groups "mod:{id}:{rel}" keys by id and counts them, without
+      // assuming rel never contains a colon (only the first colon after
+      // "mod:" is treated as the id/rel separator).
+      function groupModKeys(allKeysLower) {
+        var counts = {};
+        for (var i = 0; i < allKeysLower.length; i++) {
+          var k = allKeysLower[i];
+          if (k.indexOf("mod:") !== 0) continue;
+          var rest = k.slice(4);
+          var ci = rest.indexOf(":");
+          if (ci < 0) continue;
+          var id = rest.slice(0, ci);
+          counts[id] = (counts[id] || 0) + 1;
+        }
+        return counts;
+      }
+
+      async function buildModsSection(db) {
+        var allKeys = await getAllKeys(db);
+        var allKeysLower = [];
+        var presentLower = new Set();
+        for (var i = 0; i < allKeys.length; i++) {
+          if (typeof allKeys[i] !== "string") continue;
+          var lower = allKeys[i].toLowerCase();
+          allKeysLower.push(lower);
+          presentLower.add(lower);
+        }
+        var counts = groupModKeys(allKeysLower);
+
+        var metaIds = [];
+        for (var j = 0; j < allKeys.length; j++) {
+          if (
+            typeof allKeys[j] === "string" &&
+            allKeys[j].indexOf("__mod_meta__:") === 0
+          ) {
+            metaIds.push(allKeys[j].slice("__mod_meta__:".length));
+          }
+        }
+
+        var catalog = {};
+        try {
+          var r = await fetch("mods.json", { cache: "no-cache" });
+          if (r.ok) catalog = await r.json();
+        } catch (e) {}
+
+        var activeMod = null;
+        var activePlugins = [];
+        try {
+          activeMod = localStorage.getItem("_activeMod");
+        } catch (e) {}
+        try {
+          activePlugins = JSON.parse(
+            localStorage.getItem("_activePlugins") || "[]",
+          );
+        } catch (e) {}
+
+        var out = [];
+        for (var m = 0; m < metaIds.length; m++) {
+          var id = metaIds[m];
+          var metaRaw = await getAsset(db, "__mod_meta__:" + id);
+          var meta = {};
+          try {
+            meta = typeof metaRaw === "string" ? JSON.parse(metaRaw) : {};
+          } catch (e) {}
+
+          var catEntry = catalog[id];
+          var isActive =
+            id === activeMod || activePlugins.indexOf(id) !== -1;
+
+          if (
+            catEntry &&
+            Array.isArray(catEntry.files) &&
+            catEntry.files.length > 0
+          ) {
+            var missing = [];
+            for (var f = 0; f < catEntry.files.length; f++) {
+              var relLower = catEntry.files[f].toLowerCase();
+              if (
+                !presentLower.has("mod:" + id.toLowerCase() + ":" + relLower)
+              ) {
+                missing.push(catEntry.files[f]);
+              }
+            }
+            // A translation targeting a specific mod (mods.json "mod" field,
+            // e.g. "TCOAAR") is disambiguated as "TCOAAR:French" - plain
+            // "BASE" translations (the base game) keep the bare name.
+            var displayName = catEntry.name || id;
+            if (
+              catEntry.type === "translation" &&
+              catEntry.mod &&
+              catEntry.mod !== "BASE"
+            ) {
+              displayName = catEntry.mod + ":" + displayName;
+            }
+            out.push({
+              id: id,
+              name: displayName,
+              catalogType: catEntry.type || "",
+              fixable: true,
+              total: catEntry.files.length,
+              missing: missing,
+              broken: missing.length > 0,
+              active: isActive,
+            });
+          } else {
+            var storedCount = counts[id.toLowerCase()] || 0;
+            var recordedCount =
+              typeof meta.files === "number" ? meta.files : storedCount;
+            out.push({
+              id: id,
+              name: meta.name || id,
+              catalogType: "",
+              fixable: false,
+              total: recordedCount,
+              missing: [],
+              broken: storedCount < recordedCount,
+              active: isActive,
+            });
+          }
+        }
+        return out;
+      }
+
+      async function buildStorageSection() {
+        var usage = 0;
+        var quota = 0;
+        try {
+          if (navigator.storage && navigator.storage.estimate) {
+            var est = await navigator.storage.estimate();
+            usage = est.usage || 0;
+            quota = est.quota || 0;
+          }
+        } catch (e) {}
+        var text = await storageEstimateText();
+        return { usage: usage, quota: quota, text: text };
+      }
+
+      function openSavesDbForReport() {
+        return new Promise(function (resolve) {
+          try {
+            var req = indexedDB.open("tcoaal-saves", 1);
+            req.onupgradeneeded = function (e) {
+              try {
+                e.target.result.createObjectStore("saves");
+              } catch (err) {}
+            };
+            req.onsuccess = function (e) {
+              resolve(e.target.result);
+            };
+            req.onerror = function () {
+              resolve(null);
+            };
+          } catch (e) {
+            resolve(null);
+          }
+        });
+      }
+
+      async function buildSavesSection() {
+        var db = await openSavesDbForReport();
+        if (!db) return { keys: [], driftKeys: [] };
+        return new Promise(function (resolve) {
+          try {
+            var tx = db.transaction("saves", "readonly");
+            var store = tx.objectStore("saves");
+            var keysReq = store.getAllKeys();
+            keysReq.onsuccess = function () {
+              var keys = (keysReq.result || []).filter(function (k) {
+                return typeof k === "string";
+              });
+              var valuesReq = store.getAll();
+              valuesReq.onsuccess = function () {
+                var values = valuesReq.result || [];
+                var driftKeys = [];
+                for (var i = 0; i < keys.length; i++) {
+                  var lsVal;
+                  try {
+                    lsVal = localStorage.getItem(keys[i]);
+                  } catch (e) {
+                    continue;
+                  }
+                  if (lsVal != null && lsVal !== values[i]) {
+                    driftKeys.push(keys[i]);
+                  }
+                }
+                try {
+                  db.close();
+                } catch (e) {}
+                resolve({ keys: keys, driftKeys: driftKeys });
+              };
+              valuesReq.onerror = function () {
+                try {
+                  db.close();
+                } catch (e) {}
+                resolve({ keys: keys, driftKeys: [] });
+              };
+            };
+            keysReq.onerror = function () {
+              try {
+                db.close();
+              } catch (e) {}
+              resolve({ keys: [], driftKeys: [] });
+            };
+          } catch (e) {
+            resolve({ keys: [], driftKeys: [] });
+          }
+        });
+      }
+
+      function buildEnvironmentSection() {
+        var swState = "unsupported";
+        if ("serviceWorker" in navigator) {
+          swState = navigator.serviceWorker.controller
+            ? "controlled"
+            : "registered/uncontrolled";
+        }
+        return {
+          userAgent: navigator.userAgent || "?",
+          swState: swState,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      async function buildReportModel() {
+        var crash = readCrashPayload();
+        var db = await openDB();
+        var baseGame = await buildBaseGameSection(db);
+        var mods = await buildModsSection(db);
+        var storage = await buildStorageSection();
+        var saves = await buildSavesSection();
+        var environment = buildEnvironmentSection();
+        return {
+          crash: crash,
+          baseGame: baseGame,
+          mods: mods,
+          storage: storage,
+          saves: saves,
+          environment: environment,
+        };
+      }
+      window.__buildReportModel = buildReportModel;
+
+      // Returns { lines: [...], primaryMod: mod|null }. The first line is
+      // the single best-guess "likely cause"; any remaining lines are extra
+      // detail (e.g. every other broken mod/translation) so the summary
+      // doesn't hide problems beyond the one headline cause.
+      function diagnose(model) {
+        var crashMsg =
+          (model.crash && (model.crash.message || model.crash.title)) || "";
+
+        if (
+          isQuotaExceeded({ message: crashMsg }) ||
+          /quota|storage full/i.test(crashMsg)
+        ) {
+          return [
+            "This crash was likely caused by insufficient browser storage. " +
+              "Free up space on your device (clear other site data or apps) " +
+              "and try again.",
+          ];
+        }
+
+        var primary = null;
+        var primaryMod = null;
+
+        if (
+          model.baseGame &&
+          model.baseGame.health &&
+          model.baseGame.health.missing.length > 0
+        ) {
+          primary =
+            model.baseGame.health.missing.length +
+            " of " +
+            model.baseGame.health.total +
+            " required game files are missing from your import. This is " +
+            "very likely the cause. You can try re-importing the game first.";
+        }
+
+        if (!primary && model.crash && model.crash.url) {
+          var urlLower = model.crash.url.toLowerCase();
+          for (var i = 0; i < model.mods.length; i++) {
+            var mod = model.mods[i];
+            if (!mod.broken) continue;
+            if (urlLower.indexOf("mod:" + mod.id.toLowerCase() + ":") !== -1) {
+              primary =
+                'The mod/translation "' +
+                mod.name +
+                '" is missing files, which is likely why ' +
+                model.crash.url +
+                " failed to load.";
+              primaryMod = mod;
+              break;
+            }
+          }
+        }
+
+        if (!primary) {
+          for (var j = 0; j < model.mods.length; j++) {
+            if (model.mods[j].broken && model.mods[j].active) {
+              primary =
+                'The active mod/translation "' +
+                model.mods[j].name +
+                '" is missing files.';
+              primaryMod = model.mods[j];
+              break;
+            }
+          }
+        }
+        if (!primary) {
+          for (var k = 0; k < model.mods.length; k++) {
+            if (model.mods[k].broken) {
+              primary =
+                'The installed mod/translation "' +
+                model.mods[k].name +
+                '" is missing files.';
+              primaryMod = model.mods[k];
+              break;
+            }
+          }
+        }
+
+        if (
+          !primary &&
+          model.storage.quota > 0 &&
+          model.storage.usage / model.storage.quota > 0.95
+        ) {
+          primary =
+            "Your browser storage is nearly full (" +
+            model.storage.text +
+            "). This can cause save or asset writes to fail.";
+        }
+
+        if (!primary && model.crash) {
+          primary =
+            "Couldn't automatically identify a specific cause from the " +
+            "data available. See the details below, and consider " +
+            "exporting this report if you need help.";
+        }
+
+        if (!primary) {
+          return ["No issues detected. Everything looks fine."];
+        }
+
+        var lines = [primary];
+        var brokenMods = model.mods.filter(function (m) {
+          return m.broken && (!primaryMod || m.id !== primaryMod.id);
+        });
+        brokenMods.forEach(function (m) {
+          var countText = m.fixable
+            ? m.missing.length + " of " + m.total + " files missing"
+            : "fewer files present than expected";
+          lines.push(
+            (m.active ? "Also active: " : "Also installed: ") +
+              '"' +
+              m.name +
+              '" - ' +
+              countText +
+              (m.fixable ? " (fixable)" : " (cannot auto-fix)") +
+              ".",
+          );
+        });
+        return lines;
+      }
+      window.__diagnoseReport = diagnose;
+
+      function describeCrashSource(crash) {
+        if (!crash) return "";
+        if (crash.source === "resource-load") {
+          return (
+            "The game failed to load a file" +
+            (crash.url ? ": " + crash.url : ".")
+          );
+        }
+        if (crash.source === "boot-error") {
+          return (
+            "The game failed to start" +
+            (crash.phase ? ' during the "' + crash.phase + '" phase.' : ".")
+          );
+        }
+        if (crash.source === "drm-crash") {
+          return "The game reported an internal error while running.";
+        }
+        return crash.title || "An error occurred.";
+      }
+
+      function reportBaseGameHtml(model) {
+        var bg = model.baseGame;
+        if (bg.skipped) {
+          return (
+            '<div class="report-section"><h3>Base game files</h3>' +
+            '<div class="row">Old/non-target game version (v' +
+            (bg.skipped.version || "unknown") +
+            ") - file check skipped.</div></div>"
+          );
+        }
+        if (!bg.health) {
+          return (
+            '<div class="report-section"><h3>Base game files</h3>' +
+            "<div class=\"row\">Couldn't load the file manifest to check.</div></div>"
+          );
+        }
+        var cls = bg.health.missing.length > 0 ? "broken" : "";
+        var html =
+          '<div class="report-section"><h3>Base game files</h3>' +
+          '<div class="row ' +
+          cls +
+          '">' +
+          bg.health.found +
+          " / " +
+          bg.health.total +
+          " files present (" +
+          bg.health.percent.toFixed(1) +
+          "%)</div>";
+        if (bg.health.missing.length > 0) {
+          html +=
+            '<div class="row broken">Files missing:</div>' +
+            '<div class="report-list">' +
+            bg.health.missing
+              .slice(0, 200)
+              .join("\n")
+              .replace(/</g, "&lt;") +
+            "</div>";
+        }
+        return html + "</div>";
+      }
+
+      function reportModsHtml(model) {
+        if (model.mods.length === 0) {
+          return (
+            '<div class="report-section"><h3>Mods and translations</h3>' +
+            '<div class="row">None installed.</div></div>'
+          );
+        }
+        var html =
+          '<div class="report-section"><h3>Mods and translations</h3>';
+        for (var i = 0; i < model.mods.length; i++) {
+          var m = model.mods[i];
+          var label =
+            m.name +
+            (m.active ? " (active)" : "") +
+            (m.broken
+              ? " - " +
+                (m.fixable
+                  ? m.missing.length + " file(s) missing"
+                  : "incomplete, no remote source - re-import it")
+              : " - OK");
+          html +=
+            '<div class="row' +
+            (m.broken ? " broken" : "") +
+            '">' +
+            label.replace(/</g, "&lt;") +
+            "</div>";
+        }
+        return html + "</div>";
+      }
+
+      function reportStorageHtml(model) {
+        return (
+          '<div class="report-section"><h3>Storage</h3>' +
+          '<div class="row">' +
+          (model.storage.text || "Unavailable") +
+          "</div></div>"
+        );
+      }
+
+      function reportSavesHtml(model) {
+        var html =
+          '<div class="report-section"><h3>Save data (not modified)</h3>' +
+          '<div class="row">' +
+          model.saves.keys.length +
+          " save key(s) present.</div>";
+        if (model.saves.driftKeys.length > 0) {
+          html +=
+            '<div class="row broken">' +
+            model.saves.driftKeys.length +
+            " key(s) differ between localStorage and the backup copy: " +
+            model.saves.driftKeys.join(", ").replace(/</g, "&lt;") +
+            "</div>";
+        }
+        return html + "</div>";
+      }
+
+      function reportEnvironmentHtml(model) {
+        return (
+          '<div class="report-section"><h3>Environment</h3>' +
+          '<div class="row">Service worker: ' +
+          model.environment.swState +
+          "</div>" +
+          '<div class="row">' +
+          model.environment.timestamp +
+          "</div></div>"
+        );
+      }
+
+      function reportCrashHtml(model) {
+        if (!model.crash) return "";
+        var tech =
+          "Source: " +
+          (model.crash.source || "?") +
+          "\nMessage: " +
+          (model.crash.message || "") +
+          (model.crash.stack ? "\nStack: " + model.crash.stack : "") +
+          (model.crash.url ? "\nURL: " + model.crash.url : "") +
+          (model.crash.phase ? "\nPhase: " + model.crash.phase : "") +
+          "\nTime: " +
+          new Date(model.crash.timestamp || Date.now()).toISOString();
+        return (
+          '<div class="report-section"><h3>Crash details</h3>' +
+          '<div class="row">' +
+          describeCrashSource(model.crash).replace(/</g, "&lt;") +
+          "</div>" +
+          '<div class="report-tech">' +
+          tech.replace(/</g, "&lt;") +
+          "</div></div>"
+        );
+      }
+
+      function reportToText(model, diagnosisLines) {
+        var lines = [];
+        lines.push("TCOAAL Browser Player: Diagnostic report");
+        lines.push(new Date().toISOString());
+        lines.push("");
+        lines.push("Diagnosis:");
+        diagnosisLines.forEach(function (l) {
+          lines.push("  " + l);
+        });
+        if (model.crash) {
+          lines.push("");
+          lines.push("Crash: " + describeCrashSource(model.crash));
+          lines.push("  source: " + model.crash.source);
+          if (model.crash.message)
+            lines.push("  message: " + model.crash.message);
+          if (model.crash.url) lines.push("  url: " + model.crash.url);
+          if (model.crash.stack) lines.push("  stack: " + model.crash.stack);
+        }
+        lines.push("");
+        lines.push("Base game files:");
+        if (model.baseGame.skipped) {
+          lines.push(
+            "  skipped (version " +
+              (model.baseGame.skipped.version || "?") +
+              ")",
+          );
+        } else if (model.baseGame.health) {
+          lines.push(
+            "  " +
+              model.baseGame.health.found +
+              " / " +
+              model.baseGame.health.total +
+              " present",
+          );
+          model.baseGame.health.missing.forEach(function (f) {
+            lines.push("    missing: " + f);
+          });
+        }
+        lines.push("");
+        lines.push("Mods and translations:");
+        model.mods.forEach(function (m) {
+          lines.push(
+            "  " +
+              m.name +
+              (m.active ? " (active)" : "") +
+              " - " +
+              (m.broken ? "BROKEN (" + m.missing.length + " missing)" : "OK"),
+          );
+        });
+        lines.push("");
+        lines.push("Storage: " + model.storage.text);
+        lines.push("");
+        lines.push("Save data: " + model.saves.keys.length + " key(s)");
+        model.saves.driftKeys.forEach(function (k) {
+          lines.push("  drift: " + k);
+        });
+        lines.push("");
+        lines.push("Environment:");
+        lines.push("  UA: " + model.environment.userAgent);
+        lines.push("  SW: " + model.environment.swState);
+        return lines.join("\n");
+      }
+
+      var _lastReportModel = null;
+
+      async function renderReportPanel() {
+        var $panel = document.getElementById("report-panel");
+        if (!$panel) return;
+        $panel.textContent = "Loading report...";
+        var model = await buildReportModel();
+        _lastReportModel = model;
+        var diagnosisLines = diagnose(model);
+        var hasIssue = !(
+          diagnosisLines.length === 1 &&
+          diagnosisLines[0] === "No issues detected. Everything looks fine."
+        );
+        var html =
+          '<div class="report-summary ' +
+          (hasIssue ? "warn" : "ok") +
+          '">' +
+          diagnosisLines
+            .map(function (line, idx) {
+              return (
+                '<div class="report-summary-line' +
+                (idx === 0 ? " primary" : "") +
+                '">' +
+                line.replace(/</g, "&lt;") +
+                "</div>"
+              );
+            })
+            .join("") +
+          "</div>";
+        html += reportCrashHtml(model);
+        html += reportBaseGameHtml(model);
+        html += reportModsHtml(model);
+        html += reportStorageHtml(model);
+        html += reportSavesHtml(model);
+        html += reportEnvironmentHtml(model);
+
+        var fixable = model.mods.some(function (m) {
+          return m.fixable && m.broken;
+        });
+        html += '<div class="report-actions">';
+        html +=
+          '<button class="action-btn secondary compact" onclick="goToLoaderFromReport()">Back</button>';
+        html +=
+          '<button class="action-btn compact" onclick="exportReportText()">Download report (.txt)</button>';
+        if (fixable) {
+          html +=
+            '<button class="action-btn success compact" id="btn-fix-install" onclick="fixInstallation()">Fix installation</button>';
+        }
+        html += "</div>";
+
+        $panel.innerHTML = html;
+      }
+
+      function goToLoaderFromReport() {
+        history.replaceState(null, "", location.pathname + location.search);
+        document.body.classList.remove("show-report");
+      }
+
+      // Local equivalent of the modding module's downloadBytes() - that one
+      // lives inside the modding IIFE's private scope and isn't reachable
+      // from here, so the report gets its own tiny copy of the same
+      // Blob-download pattern instead of reaching into that module.
+      function downloadReportText(text, filename) {
+        var blob = new Blob([text], { type: "text/plain" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 4000);
+      }
+
+      function exportReportText() {
+        if (!_lastReportModel) return;
+        var text = reportToText(_lastReportModel, diagnose(_lastReportModel));
+        var stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        downloadReportText(text, "tcoaal-report-" + stamp + ".txt");
+      }
+
+      // Re-fetches only the files a catalog-sourced mod/translation is
+      // missing (model.mods[i].fixable === true) and writes them into the
+      // same "mod:{id}:{rel}" keys installMod() (lang-shim.js) uses, so the
+      // fix is picked up on next boot with no other change needed. Custom
+      // .tcoaalmod overlays and the base game are never touched here - ask
+      // the user to re-import those instead (surfaced via model.mods[i].fixable
+      // / model.baseGame in the report itself).
+      async function fetchModBasePath(id) {
+        var catalog = {};
+        try {
+          var r = await fetch("mods.json", { cache: "no-cache" });
+          if (r.ok) catalog = await r.json();
+        } catch (e) {}
+        var entry = catalog[id];
+        if (!entry || !entry.path) return null;
+        return /^https?:\/\//.test(entry.path)
+          ? entry.path.replace(/\/$/, "") + "/"
+          : "/" + entry.path + "/www/";
+      }
+
+      async function fixInstallation() {
+        var model = _lastReportModel;
+        if (!model) return;
+        var targets = model.mods.filter(function (m) {
+          return m.fixable && m.broken;
+        });
+        if (targets.length === 0) return;
+
+        var $btn = document.getElementById("btn-fix-install");
+        if ($btn) {
+          $btn.disabled = true;
+          $btn.textContent = "Fixing...";
+        }
+
+        var db = await openDB();
+        for (var t = 0; t < targets.length; t++) {
+          var mod = targets[t];
+          var base = await fetchModBasePath(mod.id);
+          if (!base) continue;
+          for (var f = 0; f < mod.missing.length; f++) {
+            var rel = mod.missing[f];
+            try {
+              var res = await fetch(base + rel);
+              if (!res.ok) continue;
+              var buf = await res.arrayBuffer();
+              await putAsset(db, "mod:" + mod.id + ":" + rel, buf);
+            } catch (e) {
+              // Leave it missing; the re-render below will still show it.
+            }
+          }
+        }
+
+        await renderReportPanel();
+      }
+
+      function applyReportRoute() {
+        var isReport = location.hash.replace(/^#/, "") === "report";
+        document.body.classList.toggle("show-report", isReport);
+        if (isReport) {
+          // Never show both merged views at once.
+          document.body.classList.remove("show-modding");
+          renderReportPanel();
+        }
+      }
+      window.addEventListener("hashchange", applyReportRoute);
+      if (location.hash.replace(/^#/, "") === "report") applyReportRoute();
     </script>
 
     <!-- Merged modding view: bootstrap + module + #modding router. -->

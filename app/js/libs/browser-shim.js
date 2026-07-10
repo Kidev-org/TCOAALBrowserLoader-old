@@ -636,7 +636,19 @@
     // requestUpdate), stop all audio, and close the AudioContext (which ends
     // the open WebAudio stream). Each step is independently guarded so a
     // missing API never blocks the redirect.
-    function quitToLoader() {
+    // crashPayload, when given, is a plain object describing what went
+    // wrong ({source, title, message, stack, url, timestamp}); it is
+    // stashed for loader.html's #report panel to read, and the redirect
+    // targets #report directly instead of the bare loader.
+    function quitToLoader(crashPayload) {
+      if (crashPayload) {
+        try {
+          sessionStorage.setItem(
+            "__crash_report__",
+            JSON.stringify(crashPayload),
+          );
+        } catch (e) {}
+      }
       try {
         if (typeof SceneManager !== "undefined") SceneManager.stop();
       } catch (e) {}
@@ -662,27 +674,49 @@
           WebAudio._context.close();
         }
       } catch (e) {}
-      window.location.href = "/loader.html";
+      window.location.href = crashPayload
+        ? "/loader.html#report"
+        : "/loader.html";
     }
 
-    // Non-blocking crash (prevent alert() freeze + nw.gui close)
+    // Exposed so index.html's boot-error overlay (App.crash's fatal-error
+    // UI, post-boot) can reuse the same teardown+stash+redirect instead of
+    // duplicating it.
+    window.__quitToLoader = quitToLoader;
+
+    // Non-blocking crash (prevent alert() freeze + nw.gui close). A DRM
+    // fatal crash has no engine-drawn UI of its own (unlike the resource-load
+    // failure screen), so reuse index.html's #boot-error overlay - still
+    // present in the DOM post-boot, via __showFatalError, which is
+    // showError()'s logic without the bootDone gate. Its "Show report"
+    // button (index.html) calls window.__quitToLoader itself, so no extra
+    // wiring is needed here beyond showing the overlay.
     if (typeof App !== "undefined") {
       App.crash = function (msg) {
         console.error("[DRM] CRITICAL:", msg);
+        if (typeof window.__showFatalError === "function") {
+          window.__showFatalError(
+            "The game crashed",
+            "An internal error was detected. Showing a report can help " +
+              "figure out what happened.",
+            { message: String(msg || "Unknown DRM crash") },
+          );
+        }
       };
       App.close = quitToLoader;
       App.report = function () {};
     }
 
-    // Loading-error screen: add an "Exit to loader" escape hatch.
+    // Loading-error screen: add a "Show report" escape hatch.
     //
     // Stock RPG Maker MV (rpg_core.js Graphics.printLoadingError) shows a
     // full-screen error with a single "Retry" button when a resource fails to
     // load past ResourceHandler's retry budget. Retry is often futile in
     // browser mode (a genuinely missing/corrupt IDB asset never appears), which
     // strands the user with no way out. Wrap the stock method to append a
-    // second button that tears the game down and returns to /loader.html
-    // (re-import / clear-data flows live there), styled to match "Retry".
+    // second button that tears the game down and sends the user to
+    // /loader.html#report with the failing URL attached, styled to match
+    // "Retry".
     if (
       typeof Graphics !== "undefined" &&
       typeof Graphics.printLoadingError === "function"
@@ -693,17 +727,23 @@
         // Only when the stock method actually rendered the Retry button (guard
         // matches its own: printer present and no fatal error already showed).
         if (!this._errorPrinter || this._errorShowed) return;
-        var exitBtn = document.createElement("button");
-        exitBtn.innerHTML = "Exit to loader";
-        exitBtn.style.fontSize = "24px";
-        exitBtn.style.color = "#ffffff";
-        exitBtn.style.backgroundColor = "#000000";
-        exitBtn.style.marginLeft = "20px";
-        exitBtn.onmousedown = exitBtn.ontouchstart = function (event) {
-          quitToLoader();
+        var reportBtn = document.createElement("button");
+        reportBtn.innerHTML = "Show report";
+        reportBtn.style.fontSize = "24px";
+        reportBtn.style.color = "#ffffff";
+        reportBtn.style.backgroundColor = "#000000";
+        reportBtn.style.marginLeft = "20px";
+        reportBtn.onmousedown = reportBtn.ontouchstart = function (event) {
+          quitToLoader({
+            source: "resource-load",
+            title: "Failed to load a game file",
+            message: "The game failed to load: " + url,
+            url: url,
+            timestamp: Date.now(),
+          });
           event.stopPropagation();
         };
-        this._errorPrinter.appendChild(exitBtn);
+        this._errorPrinter.appendChild(reportBtn);
       };
     }
 

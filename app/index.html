@@ -316,9 +316,10 @@
       </p>
       <div class="err-msg" id="err-msg"></div>
       <div class="actions">
-        <button class="danger" onclick="window.__bootClearAndReload()">
+        <button class="danger" onclick="window.__bootClearAndReload(event)">
           Clear and reload
         </button>
+        <button onclick="window.__bootShowReport()">Show report</button>
       </div>
       <button class="details-btn" onclick="window.__bootToggleDiag()">
         Show diagnostic info
@@ -670,6 +671,8 @@
         var TRANSLATIONS_DB_NAME = "tcoaal-translations";
         var CLD_KEY = "data/9c7050ae76645487";
         var LANG_CACHE_KEY = "__lang_data__";
+        // Mirrors loader.html's SAVE_KEY_RE exactly, keep both in sync.
+        var SAVE_KEY_RE = /(?:^|:)RPG (?:File\d+|Global|Config|Auto\d+)$/;
 
         // Every IndexedDB connection this page opens is tracked here so the
         // clear-and-reload flow can close them first. An open connection
@@ -717,8 +720,10 @@
           return lines.join("\n");
         }
 
-        function showError(title, desc, err) {
-          if (bootDone) return; // ignore post-boot errors (game owns them)
+        // Always shows the overlay, regardless of boot state. Exposed for
+        // App.crash (browser-shim.js) to reuse post-boot, since the game has
+        // no crash UI of its own for a DRM-detected fatal error.
+        function showErrorForce(title, desc, err) {
           if (errOverlay.classList.contains("visible")) return; // first error wins
           if (title) errTitle.textContent = title;
           if (desc) errDesc.textContent = desc;
@@ -730,6 +735,12 @@
           errOverlay.classList.add("visible");
           // Hide splash so error is the only thing visible.
           splash.classList.add("hidden");
+        }
+        window.__showFatalError = showErrorForce;
+
+        function showError(title, desc, err) {
+          if (bootDone) return; // ignore post-boot errors (game owns them)
+          showErrorForce(title, desc, err);
         }
 
         // Clear all persisted state and send the user back to the loader.
@@ -746,7 +757,17 @@
         //   4) wait for deleteDatabase to truly complete (success only;
         //      onblocked means something is still holding it open)
         //   5) replace into loader.html
-        window.__bootClearAndReload = async function () {
+        window.__bootClearAndReload = async function (e) {
+          var wipeSaves = !!(e && (e.ctrlKey || e.metaKey));
+          if (wipeSaves) {
+            var ok = window.confirm(
+              "This will also permanently delete your save files. This " +
+                "cannot be undone.\n\nClick Cancel to keep your saves and " +
+                "only clear the game/translation data instead.",
+            );
+            if (!ok) return;
+          }
+
           var btn = errOverlay.querySelector("button.danger");
           if (btn) {
             btn.disabled = true;
@@ -777,9 +798,21 @@
             } catch (e) {}
           }
 
-          // 3. localStorage.
+          // 3. localStorage. Preserve save keys unless the user explicitly
+          // opted into wiping them (ctrl/cmd+click, confirmed above).
           try {
-            localStorage.clear();
+            if (wipeSaves) {
+              localStorage.clear();
+            } else {
+              var keysToRemove = [];
+              for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && !SAVE_KEY_RE.test(k)) keysToRemove.push(k);
+              }
+              keysToRemove.forEach(function (k) {
+                localStorage.removeItem(k);
+              });
+            }
           } catch (e) {}
 
           // 3b. Close every IndexedDB connection this page opened. An open
@@ -832,7 +865,7 @@
             });
           }
           await dropDb(DB_NAME);
-          await dropDb(SAVE_DB_NAME);
+          if (wipeSaves) await dropDb(SAVE_DB_NAME);
           await dropDb(TRANSLATIONS_DB_NAME);
 
           // 5. Done. Surface it on the button so the user knows the
@@ -849,6 +882,35 @@
           setTimeout(function () {
             location.reload();
           }, 1500);
+        };
+
+        // "Show report" (both the pre-boot #boot-error overlay and the
+        // post-boot DRM-crash reuse of it, App.crash in browser-shim.js)
+        // stash what's known about the failure and hand off to loader.html's
+        // #report panel. Unlike __bootClearAndReload, this never clears
+        // anything, the report needs live state to diagnose.
+        window.__bootShowReport = function () {
+          var payload = {
+            source: bootDone ? "drm-crash" : "boot-error",
+            title: errTitle.textContent || "",
+            message: errMsg.textContent || "",
+            phase: bootPhase,
+            timestamp: Date.now(),
+          };
+          if (typeof window.__quitToLoader === "function") {
+            // browser-shim.js has loaded: reuse its teardown (stops the
+            // scene loop / audio if a game is actually running) + stash +
+            // redirect in one call.
+            window.__quitToLoader(payload);
+            return;
+          }
+          try {
+            sessionStorage.setItem(
+              "__crash_report__",
+              JSON.stringify(payload),
+            );
+          } catch (e) {}
+          window.location.href = "/loader.html#report";
         };
 
         window.__bootToggleDiag = function () {

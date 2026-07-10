@@ -1394,6 +1394,34 @@
   var _isAndroidApp = /TCOAALApp\//.test(navigator.userAgent);
   var _cachedOffline = false;
 
+  // The Android app's WebView can't turn a blob: URL + <a download> click
+  // into an actual download (no DownloadListener is registered, and blob:
+  // URLs have no host for UrlPolicy to recognize as internal, so the click
+  // is silently dropped as an unhandled external Intent). When the native
+  // bridge is present (see ExportBridge.kt in android/), hand exported
+  // files to it instead of the blob+anchor trick.
+  function androidExportBridge() {
+    return typeof window.AndroidExportBridge !== "undefined" &&
+      typeof window.AndroidExportBridge.exportFile === "function"
+      ? window.AndroidExportBridge
+      : null;
+  }
+
+  // Uses TextEncoder rather than a plain btoa(str) so it's correct
+  // regardless of the string's character range (save content happens to be
+  // ASCII-only today - LZString's base64 alphabet - but this doesn't rely
+  // on that staying true). Chunked to avoid blowing the call stack on
+  // String.fromCharCode.apply for a large payload.
+  function textToBase64(str) {
+    var bytes = new TextEncoder().encode(str);
+    var CHUNK = 0x8000;
+    var binary = "";
+    for (var i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+  }
+
   function _probeOffline(cb) {
     // navigator.onLine === false is a reliable "definitely offline" on desktop;
     // Android WebView may return true even when offline, so we confirm with a
@@ -3051,11 +3079,6 @@
             SoundManager.playBuzzer();
             return;
           }
-          var blob = new Blob([rpgsave], {
-            type: "application/octet-stream",
-          });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement("a");
           // Filename prefix follows the save-scope mod, not the active mod:
           // translations share the base game's scope, so exported files keep
           // the bare `fileN.rpgsave` name and can be re-imported under any
@@ -3066,12 +3089,27 @@
           // (preserving the timestamp that identifies them) and regular
           // slots export as fileN.rpgsave.
           var base = savefileBasename(path) || "file" + savefileId + ".rpgsave";
-          a.href = url;
-          a.download = prefix + base;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
+          var filename = prefix + base;
+          var bridge = androidExportBridge();
+          if (bridge) {
+            bridge.exportFile(
+              textToBase64(rpgsave),
+              filename,
+              "application/octet-stream",
+            );
+          } else {
+            var blob = new Blob([rpgsave], {
+              type: "application/octet-stream",
+            });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
           SoundManager.playSave();
         } catch (e) {
           console.error("[lang-shim] Save export failed:", e);
@@ -5365,19 +5403,29 @@
           return;
         }
         var rpgsave = LZString.compressToBase64(json);
-        var blob = new Blob([rpgsave], {
-          type: "application/octet-stream",
-        });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
         var mod = getActiveMod();
         var prefix = mod ? mod + "_" : "";
-        a.href = url;
-        a.download = prefix + "global.rpgsave";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        var filename = prefix + "global.rpgsave";
+        var bridge = androidExportBridge();
+        if (bridge) {
+          bridge.exportFile(
+            textToBase64(rpgsave),
+            filename,
+            "application/octet-stream",
+          );
+        } else {
+          var blob = new Blob([rpgsave], {
+            type: "application/octet-stream",
+          });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
         SoundManager.playSave();
       } catch (e) {
         console.error("[lang-shim] Global save export failed:", e);

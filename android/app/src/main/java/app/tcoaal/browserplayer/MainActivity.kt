@@ -94,6 +94,7 @@ class MainActivity : AppCompatActivity() {
             SaveBridge(saveStore) { json -> restoreSaves(json) },
             "AndroidSaveBridge"
         )
+        webView.addJavascriptInterface(ExportBridge(this), "AndroidExportBridge")
 
         webView.settings.apply {
             userAgentString = "$userAgentString TCOAALApp/1"
