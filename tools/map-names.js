@@ -432,6 +432,7 @@ module.exports = {
   // asset-filename round-trip (formerly file-names.js)
   ASSET_NAMES,
   dirExt,
+  dirSuffix,
   toName,
   toHash,
   bakeAssetNames,

@@ -6,7 +6,7 @@
     "type": "built-in plugin",
     "description": "Enables mouse and touch input for menus and gameplay",
     "author": "kidev",
-    "version": "fce8851",
+    "version": "e08d63d",
     "files": [
       "img/icon.png",
       "js/plugins/MouseControl.js"
@@ -19,7 +19,7 @@
     "type": "built-in plugin",
     "description": "On-screen controller: a D-pad on the left and four action buttons on the right",
     "author": "kidev",
-    "version": "fce8851",
+    "version": "e08d63d",
     "files": [
       "img/icon.png",
       "js/plugins/VirtualController.js"
@@ -32,7 +32,7 @@
     "type": "built-in plugin",
     "description": "Keeps the player centered and turns door transfers into a smooth pan into the next map",
     "author": "kidev",
-    "version": "fce8851",
+    "version": "e08d63d",
     "requiresBaseGame": false,
     "files": [
       "img/icon.png",
@@ -46,7 +46,7 @@
     "type": "built-in plugin",
     "description": "While enabled, the vision room, visions and stars are all available",
     "author": "kidev",
-    "version": "fce8851",
+    "version": "e08d63d",
     "requiresBaseGame": true,
     "files": [
       "img/icon.png",
@@ -60,7 +60,7 @@
     "type": "built-in plugin",
     "description": "Changes party character movement to dot movement that does not depend on tiles",
     "author": "Sanshiro",
-    "version": "fce8851",
+    "version": "e08d63d",
     "lastUpdate": "2024-03-29",
     "files": [
       "img/icon.png",
@@ -75,7 +75,7 @@
     "type": "built-in plugin",
     "description": "Add a message backlog function to the game's message system (shortcut: TAB)",
     "author": "Yanfly",
-    "version": "fce8851",
+    "version": "e08d63d",
     "lastUpdate": "2024-03-29",
     "files": [
       "img/icon.png",
@@ -87,13 +87,13 @@
     "name": "The Coffin of Andrew and Renee",
     "icon": "mods/TCOAAR/www/img/titles1/Book.png",
     "author": "Graveyard Shift",
-    "lastUpdate": "2026-04-15",
+    "lastUpdate": "2026-07-11",
     "repo": "https://github.com/graveyardshiftpd/tcoaar-project",
     "path": "mods/TCOAAR",
     "type": "overhaul",
     "description": "A retelling of the original story in an alternate universe where one aspect of their childhood was changed",
     "langFile": "languages/english/dialogue.loc",
-    "version": "",
+    "version": "e08d63d",
     "files": [
       "Copyrights - Coffin of Andy and Leyley.txt",
       "Credits and Licenses.txt",
@@ -130,6 +130,7 @@
       "data/Actors.json",
       "data/Animations.json",
       "data/Armors.json",
+      "data/Classes.json",
       "data/CommonEvents.json",
       "data/Copylist.txt",
       "data/Credits.txt",
@@ -248,8 +249,13 @@
       "data/Troops.json",
       "data/Weapons.json",
       "fonts/Faustina - SIL Open Font License.txt",
+      "fonts/Faustina-Regular.ttf",
       "fonts/gamefont.css",
+      "fonts/mplus-1m-regular.ttf",
       "greenworks/greenworks.js",
+      "greenworks/lib/greenworks-win32.node",
+      "greenworks/lib/sdkencryptedappticket.dll",
+      "greenworks/lib/steam_api.dll",
       "greenworks/license.txt",
       "icon/icon.png",
       "img/characters/!Other1.png",
@@ -657,6 +663,7 @@
       "img/parallaxes/ground82.png",
       "img/parallaxes/ground83.png",
       "img/parallaxes/ground84.png",
+      "img/parallaxes/ground88.png",
       "img/parallaxes/ground89.png",
       "img/parallaxes/ground90.png",
       "img/parallaxes/ground92.png",
@@ -1927,7 +1934,7 @@
       "mods/The coffin of Andy and July/mod.json",
       "package.json"
     ],
-    "version": "424d6e4",
+    "version": "e08d63d",
     "drmType": "none"
   },
   "TCOAALili": {
@@ -2988,7 +2995,7 @@
       "languages/english/dialogue.loc",
       "package.json"
     ],
-    "version": "424d6e4",
+    "version": "e08d63d",
     "drmType": "direct"
   },
   "TLCOAAA": {
@@ -3769,7 +3776,7 @@
       "js/rpg_windows.js",
       "package.json"
     ],
-    "version": "424d6e4",
+    "version": "e08d63d",
     "drmType": "direct"
   },
   "TDOAAL": {
@@ -3780,7 +3787,7 @@
     "description": "Adds voice acting to Chapter 1 (FenrirtheWulf, iamyourmagician, Adoxographist, PatchumiVT, Shami, WesternShadow, Zombi)",
     "lastUpdate": "2025-09-15",
     "author": "6ExtraOrdinary9",
-    "version": "424d6e4",
+    "version": "e08d63d",
     "files": [
       "audio/bgm/Sexy Raidish/1/Voice/A1",
       "audio/bgm/Sexy Raidish/1/Voice/A10",
@@ -8857,7 +8864,7 @@
     "mod": "BASE",
     "description": "Türkçe",
     "langFile": "dialogue.csv",
-    "version": "2026-07-05",
+    "version": "2026-07-04",
     "files": [
       "dialogue.csv",
       "icon.png",
