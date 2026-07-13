@@ -1209,7 +1209,7 @@
               if (!manifest || !Array.isArray(manifest.files)) return true;
               // The manifest lists ONE version's hashed filenames
               // (manifest.targetVersion). A different, known imported version
-              // has different hashes, so the file check doesn't apply - skip
+              // has different hashes, so the file check doesn't apply; skip
               // it (the loader shows a version notice) rather than bouncing the
               // user here on every navigation.
               var target = manifest.targetVersion;
@@ -1602,7 +1602,7 @@
               if (versionOk && !canReparse) return;
 
               // Judging parse-staleness needs LANG_PARSE_VERSION, and applying
-              // either fix needs the parser itself - both live in lang-format.js.
+              // either fix needs the parser itself; both live in lang-format.js.
               // It's in GAME_SCRIPTS but loads later, so pull it in now. Only
               // reached for an installed active translation, so users without a
               // translation never load it on the boot path.

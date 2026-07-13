@@ -3,7 +3,7 @@
  *
  * Browser `url` for the bundled mod runtime. The only consumer is memfs
  * (@jsonjoy.com/fs-core + fs-node), which uses `require('url').URL` solely for a
- * `path instanceof URL` guard / file:// path parsing - and the tools always pass
+ * `path instanceof URL` guard / file:// path parsing, and the tools always pass
  * plain string paths, so that branch is never taken. node-stdlib-browser
  * otherwise maps `url` to a full legacy url.parse proxy that drags in
  * qs + object-inspect + get-intrinsic (~70 KB) for an API nothing here calls.

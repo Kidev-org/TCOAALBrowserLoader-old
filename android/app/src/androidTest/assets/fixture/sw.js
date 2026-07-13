@@ -1,5 +1,5 @@
 // Minimal service worker that claims the page immediately and intercepts /probe.
-// If the test sees "INTERCEPTED", fetch interception works in this WebView - the
+// If the test sees "INTERCEPTED", fetch interception works in this WebView; the
 // capability the real app's asset-decryption service worker depends on.
 self.addEventListener("install", function () {
   self.skipWaiting();

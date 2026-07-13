@@ -32,8 +32,8 @@ import java.io.File
  *
  * Why a WebView wrapper instead of a PWA/TWA: the WebView's storage lives in this
  * app's private sandbox (app_webview/), so it is never subject to browser storage
- * eviction (Chrome pressure, Safari ITP). The only durability gap left - surviving
- * a factory reset - is closed by mirroring saves to a tiny native file that rides
+ * eviction (Chrome pressure, Safari ITP). The only durability gap left, surviving
+ * a factory reset, is closed by mirroring saves to a tiny native file that rides
  * Android Auto Backup (see SaveStore / SaveBridge / assets/save-sync.js).
  */
 class MainActivity : AppCompatActivity() {
@@ -130,7 +130,7 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = object : WebChromeClient() {
             // The game's www/ is imported as a .zip via the loader's file input.
             // (Folder import uses webkitdirectory, which Android WebView cannot
-            // satisfy - users must pick the .zip on mobile.)
+            // satisfy; users must pick the .zip on mobile.)
             override fun onShowFileChooser(
                 webView: WebView,
                 callback: ValueCallback<Array<Uri>>,

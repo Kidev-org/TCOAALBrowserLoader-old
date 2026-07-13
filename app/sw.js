@@ -864,11 +864,11 @@ function mergeLangData(base, mod) {
  * overhaul's English reassert itself over the base-game translation for lines
  * the overhaul never actually touched. So resolve per key, highest priority
  * first:
- *   1. mod translation (modTrans) - the mod author's text (new + chosen base).
+ *   1. mod translation (modTrans): the mod author's text (new + chosen base).
  *   2. overhaul, but ONLY where it changed the base line (overhaul != baseEng):
  *      the mod rewrote that line, so its English stays (until modTrans covers).
- *   3. base-game translation (baseTrans) - the original line, this language.
- *   4. overhaul-only / base English - untranslated fallback.
+ *   3. base-game translation (baseTrans): the original line, this language.
+ *   4. overhaul-only / base English: untranslated fallback.
  * An overhaul line equal to the base line is treated as "unchanged" so the
  * base translation applies; a changed or brand-new overhaul line is not
  * mistranslated by the original line's translation.
@@ -1395,6 +1395,29 @@ self.addEventListener("message", (event) => {
     }
     return;
   }
+
+  if (data.type === "resetGameCaches") {
+    // Sent by the loader after a physical base-game version swap (renaming
+    // IDB keys between the plain namespace and gamever:{id}:). A still-
+    // running SW instance is not guaranteed to restart across the loader's
+    // navigation to index.html, so purely-derived per-version caches must
+    // be dropped explicitly or a stale worker could serve mismatched-
+    // version content (wrong DRM payload, wrong case-insensitive directory
+    // hits from _ciCache).
+    _ciCache.clear();
+    _drmCache = null;
+    _drmAttempted = false;
+    const ack = openDB()
+      .then((db) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        tx.objectStore(STORE_NAME).delete(DRM_CACHE_KEY);
+      })
+      .catch(() => {});
+    if (event.ports && event.ports[0]) {
+      ack.then(() => event.ports[0].postMessage({ ok: true }));
+    }
+    return;
+  }
 });
 
 /**
@@ -1544,7 +1567,7 @@ async function tryModOverlay(db, modId, logicalPath) {
   //      before fetching: maps and the database load as "data/Map006",
   //      "data/System" (verified from the engine's XHRs), and media the same
   //      way. Append the conventional extension, hash THAT, and look up the
-  //      hashed (TCOAAL-encrypted) overlay - mirroring serveFromIDB's own
+  //      hashed (TCOAAL-encrypted) overlay, mirroring serveFromIDB's own
   //      base-game extension-guess fallback (step 4b).
   //
   //      Without this, code/data edits in an imported mod NEVER apply: the

@@ -219,7 +219,7 @@
       }
 
       body {
-        /* Transparent so the root (html) background shows through - it carries
+        /* Transparent so the root (html) background shows through: it carries
            the bg image and is painted first/full-screen, which is what hides
            the one-frame mis-sized .overlay layer during the page swap. */
         background: transparent;
@@ -235,7 +235,7 @@
         top: 0;
         left: 0;
         /* 100% (not 100vw) so the bg box excludes the reserved scrollbar gutter,
-           matching modding.html's inset:0 .bg - keeps the bg from shifting x
+           matching modding.html's inset:0 .bg; keeps the bg from shifting x
            between the two pages. */
         width: 100%;
         /* dvh tracks the visible viewport as mobile browser chrome
@@ -910,6 +910,62 @@
           0 0 22px rgba(164, 224, 154, 0.65),
           inset 0 0 18px rgba(0, 0, 0, 0.35);
       }
+      .play-row {
+        display: flex;
+        align-items: stretch;
+        gap: clamp(6px, 1vmin, 10px);
+        position: relative;
+      }
+      .play-row .action-btn.play {
+        flex: 1 1 auto;
+      }
+      .version-btn {
+        flex: 0 0 auto;
+        width: clamp(44px, 7vmin, 60px);
+        background: var(--green);
+        color: var(--black);
+        border: 3px solid var(--black);
+        font-size: clamp(11px, 1.6vmin, 15px);
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
+      }
+      .version-btn:hover:not(:disabled) {
+        background: #a4e09a;
+      }
+      .version-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .version-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 6px;
+        background: var(--black);
+        border: 2px solid var(--green);
+        min-width: 180px;
+        z-index: 20;
+        padding: 4px;
+      }
+      .version-menu-item {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: none;
+        color: #fff;
+        padding: 8px 10px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .version-menu-item:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .version-menu-item.active {
+        color: var(--green);
+        font-weight: bold;
+      }
       .health-panel {
         display: none;
         flex-direction: column;
@@ -1369,7 +1425,7 @@
       }
 
       /* Diagnostic report view (#report route). Plain div, not a shadow
-         root - the report is one screen, not a nested-tab tool like
+         root; the report is one screen, not a nested-tab tool like
          #modding, so it doesn't need that machinery. */
       #report-panel {
         display: none;
@@ -1492,7 +1548,7 @@
       /* Only the main content column animates; the Steam card and the top-link
          buttons are identical between the two views and stay put (animating
          them looked wrong since they don't move/leave). The incoming column is
-         delayed so the outgoing one mostly clears first - the two don't overlap
+         delayed so the outgoing one mostly clears first; the two don't overlap
          much. */
       .overlay.anim-in-up .content {
         animation: viewInUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
@@ -1846,9 +1902,20 @@
 
         <div class="manage-panel" id="manage-panel">
           <div class="manage-actions">
-            <button class="action-btn play" id="btn-play" onclick="goToGame()">
-              PLAY
-            </button>
+            <div class="play-row" id="play-row">
+              <button class="action-btn play" id="btn-play" onclick="goToGame()">
+                PLAY
+              </button>
+              <button
+                class="version-btn"
+                id="btn-version"
+                type="button"
+                style="display: none"
+                title="Choose which imported game version to play"
+                onclick="toggleVersionMenu(event)"
+              ></button>
+              <div class="version-menu" id="version-menu" style="display: none"></div>
+            </div>
           </div>
 
           <!--
@@ -2095,7 +2162,7 @@
       }
 
       body {
-        /* Transparent so the root (html) background shows through - it carries
+        /* Transparent so the root (html) background shows through: it carries
            the bg image and is painted first/full-screen, which is what hides
            the one-frame mis-sized .bg layer during the page swap. */
         background: transparent;
@@ -2740,6 +2807,11 @@
         vertical-align: -2px;
         margin-right: 6px;
       }
+      /* Trailing position (e.g. a pending-version chip): spacing comes from
+         the chip's own flex `gap`, not this spinner's own margin. */
+      .spinner.spinner-trail {
+        margin-right: 0;
+      }
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -3187,12 +3259,20 @@
         border-top: 1px solid rgba(255, 255, 255, 0.12);
         margin: 16px 0;
       }
+      /* Grid (not flex) so the title/paragraph/button-row/download-row of
+         each column land in shared row tracks: every row is sized to its
+         tallest cell, so e.g. both columns' button rows start at the same
+         Y regardless of the two paragraphs' different lengths. Each
+         .split-col is a subgrid of those same row tracks so its 4 direct
+         children (h3, p, .row, .app-dl) slot into them in DOM order. */
       .split {
-        display: flex;
-        align-items: stretch;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
       }
       .split-col {
-        flex: 1 1 0;
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-row: 1 / span 4;
         min-width: 0;
         padding: 0 20px;
       }
@@ -3205,10 +3285,13 @@
       }
       @media (max-width: 560px) {
         .split {
-          flex-direction: column;
+          display: block;
+        }
+        .split-col {
+          display: block;
+          padding: 0 0 16px;
         }
         .split-col:first-child {
-          padding: 0 0 16px;
           border-right: none;
           border-bottom: 1px solid rgba(255, 255, 255, 0.12);
         }
@@ -3425,8 +3508,8 @@
         to { opacity: 0; transform: translateY(40px); }
       }
       /* Light horizontal swipe for the small-screen pinned back button
-         (.tab-back-pinned, a shadow-root child - not inside the transformed
-         .wrap - so the swipe is purely horizontal, no vertical drag to cancel).
+         (.tab-back-pinned, a shadow-root child, not inside the transformed
+         .wrap, so the swipe is purely horizontal, no vertical drag to cancel).
          Forward (enter modding): slide in from the left. Back: slide out left. */
       @keyframes backSwipeIn {
         from { opacity: 0; transform: translateX(-30px); }
@@ -3455,7 +3538,7 @@
 
       /* Only the content column (.wrap) animates; the Steam card and top-link
          buttons stay put (see loader side). Incoming is delayed so the outgoing
-         column clears first - minimal overlap between the two views. */
+         column clears first; minimal overlap between the two views. */
       :host(.anim-in-up) .wrap {
         animation: viewInUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
       }
@@ -3936,7 +4019,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
 
       <!-- Version picker: shown when an added game's version can't be read from
            its files (older 1.x/2.x builds store no version), so the user can
-           say which build it is - needed for mods that target a specific one. -->
+           say which build it is, needed for mods that target a specific one. -->
       <div class="modal-overlay" id="verpick" hidden>
         <div class="modal">
           <h3>Which game version is this?</h3>
@@ -4100,7 +4183,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             req.onsuccess = function (e) {
               var db = e.target.result;
               // Never let this best-effort handle block the wipe flow's
-              // deleteDatabase("tcoaal-saves") - close on versionchange.
+              // deleteDatabase("tcoaal-saves"): close on versionchange.
               db.onversionchange = function () {
                 try {
                   db.close();
@@ -4621,7 +4704,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           $sum.classList.add("ok");
           // Same summary for every non-target version (old build or a remaster
           // that isn't the latest). Builds before 2.0.12 predate the
-          // GAME_VERSION constant, so the exact number is unknown - label them
+          // GAME_VERSION constant, so the exact number is unknown; label them
           // as older than that cutoff.
           $sum.textContent = oldInfo.version
             ? "Old game version (v" + oldInfo.version + ") used"
@@ -5229,7 +5312,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // would flag almost everything as missing even though the game is fine.
       // Returns { version, target } to skip the check (mirroring old builds),
       // or null when the install is the target version (or either version is
-      // unknown - then we check honestly).
+      // unknown, then we check honestly).
       async function detectOutdatedRemaster(db) {
         const manifest = await loadExpectedManifest();
         const target = manifest && manifest.targetVersion;
@@ -5319,6 +5402,25 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         await putAsset(db, LANG_DATA_CACHE_KEY, jsonStr);
         return true;
       }
+
+      // Bridge into the modding IIFE (a separate top-level <script> scope -
+      // see the window.__MODDING__ comment there) so "Add a game version"
+      // can run this same old-build detection/decryption + CLD-extraction
+      // pipeline against an in-memory files map instead of IDB. Without
+      // this, a version added via "+" was stored raw (still k9a-encrypted
+      // for old builds, and never CLD-extracted for any build), so
+      // switching to it as the active game left it without __lang_data__
+      // ("Missing CLD" at boot) even though a direct primary import of the
+      // same files works fine.
+      window.__oldVersionImport = {
+        prepare: prepareOldVersionImport,
+        parseLocText: parseLocText,
+        cldDekit: cldDekit,
+        swHashPath: swHashPath,
+        CLD_IDB_KEY: CLD_IDB_KEY,
+        LANG_DATA_CACHE_KEY: LANG_DATA_CACHE_KEY,
+        OLD_HASHMAP_KEY: OLD_HASHMAP_KEY,
+      };
 
       var $bar = document.getElementById("bar");
       var $status = document.getElementById("status");
@@ -5865,7 +5967,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         return !!t && Array.prototype.indexOf.call(t, "Files") !== -1;
       }
 
-      // True while an import is already running (buttons disabled) - used to
+      // True while an import is already running (buttons disabled); used to
       // ignore further drops mid-import.
       function importBusy() {
         return !!($load && $load.disabled);
@@ -6036,6 +6138,142 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         window.location.href = "/index.html";
       }
 
+      // PLAY-button version control: only relevant once the user has more
+      // than one playable game version (Modding tab's "+"). Hidden entirely
+      // otherwise, so single-version installs are unaffected.
+      var _versionsForPlay = [];
+
+      function renderVersionButton() {
+        var $btn = document.getElementById("btn-version");
+        if (!$btn) return;
+        if (_versionsForPlay.length < 2) {
+          $btn.style.display = "none";
+          closeVersionMenu();
+          return;
+        }
+        var active = _versionsForPlay.filter(function (v) {
+          return v.active;
+        })[0];
+        $btn.textContent = (active && active.version) || "?";
+        $btn.style.display = "";
+      }
+
+      function closeVersionMenu() {
+        var $menu = document.getElementById("version-menu");
+        if ($menu) $menu.style.display = "none";
+      }
+
+      function toggleVersionMenu(e) {
+        if (e) e.stopPropagation();
+        var $menu = document.getElementById("version-menu");
+        if (!$menu) return;
+        var opening = $menu.style.display === "none" || !$menu.style.display;
+        if (!opening) {
+          closeVersionMenu();
+          return;
+        }
+        $menu.innerHTML = "";
+        _versionsForPlay.forEach(function (v) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "version-menu-item" + (v.active ? " active" : "");
+          b.textContent = v.label;
+          b.onclick = function (ev) {
+            ev.stopPropagation();
+            closeVersionMenu();
+            if (!v.active) onPickVersion(v.id);
+          };
+          $menu.appendChild(b);
+        });
+        $menu.style.display = "block";
+      }
+
+      document.addEventListener("click", function () {
+        closeVersionMenu();
+      });
+
+      // Re-fetch the playable-version list and re-render the PLAY-button
+      // control. Called at boot and whenever the loader view (re)appears
+      // (the router calls window.__refreshVersionsForPlay), so a version
+      // added/removed from the Modding tab shows up without a page reload.
+      async function refreshVersionsForPlay() {
+        if (!(window.__MODDING__ && window.__MODDING__.listVersionsForPlay))
+          return;
+        try {
+          _versionsForPlay = await window.__MODDING__.listVersionsForPlay();
+        } catch (e) {
+          _versionsForPlay = [];
+        }
+        renderVersionButton();
+      }
+      window.__refreshVersionsForPlay = refreshVersionsForPlay;
+
+      // Re-run the same healthcheck sequence the boot IIFE runs on load
+      // (old build / outdated remaster / expected-files check), and render
+      // it. Shared so a version switch can refresh the health panel to
+      // match the newly active version instead of leaving it showing the
+      // previous version's stale result.
+      async function refreshHealthcheck() {
+        var db;
+        try {
+          db = await openDB();
+        } catch (e) {
+          return;
+        }
+        var oldInfo = await detectOldInstall(db);
+        if (oldInfo) {
+          renderHealthcheck(null, oldInfo);
+          return;
+        }
+        var outdated = await detectOutdatedRemaster(db);
+        if (outdated) {
+          renderHealthcheck(null, outdated);
+          return;
+        }
+        var health = await runHealthcheck(db);
+        renderHealthcheck(health);
+      }
+
+      async function onPickVersion(id) {
+        var $play = document.getElementById("btn-play");
+        var $verBtn = document.getElementById("btn-version");
+        var $managePanel = document.getElementById("manage-panel");
+        if ($play) $play.disabled = true;
+        if ($verBtn) $verBtn.disabled = true;
+        // Match the primary import's loading screen: hide the manage panel
+        // (health panel, PLAY/version buttons, footer) so only the progress
+        // bar shows while the swap runs.
+        if ($managePanel) $managePanel.classList.remove("visible");
+        showProgress(true);
+        setProgress(0, 1);
+        setStatus("Switching game version...");
+        var ok = false;
+        try {
+          await window.__MODDING__.switchVersion(id, function (text, done, total) {
+            setStatus(text);
+            setProgress(done, total);
+          });
+          ok = true;
+        } catch (e) {
+          console.warn("[loader] version switch failed:", e);
+          setStatus(
+            "Could not switch game version: " +
+              (e && e.message ? e.message : e),
+            "error",
+          );
+        }
+        if (ok) {
+          // Refresh the version list and health panel before showing the
+          // play page again, so both reflect the version that's now active.
+          await refreshVersionsForPlay();
+          await refreshHealthcheck();
+          showProgress(false);
+        }
+        if ($managePanel) $managePanel.classList.add("visible");
+        if ($play) $play.disabled = false;
+        if ($verBtn) $verBtn.disabled = false;
+      }
+
       // "Clear data" (button) -> open the destructive confirmation
       // dialog. The actual wipe happens in performClearAndReimport(),
       // called by the dialog's "Wipe everything" button.
@@ -6130,7 +6368,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         // Proactively close any IDB handle this page itself still holds open
         // (the modding panel keeps a connection open for its lifetime). An open
         // connection from our own page is the most common cause of a blocked
-        // delete - far more than DevTools. Closing here lets deleteDatabase
+        // delete, far more than DevTools. Closing here lets deleteDatabase
         // proceed immediately; the onversionchange handlers on every other
         // connection cover handles we can't reach directly.
         try {
@@ -6138,7 +6376,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         } catch (e) {}
 
         // Resolves with true on a clean delete, false if the delete stays
-        // blocked (another connection holds the DB open - almost always the
+        // blocked (another connection holds the DB open, almost always the
         // DevTools Application > IndexedDB inspector). A blocked delete is
         // only queued, not done: reloading anyway leaves a zombie delete that
         // the next openDB() gets stuck behind, stalling re-import at 0% until
@@ -6669,25 +6907,13 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         if ($info) $info.style.display = "none";
         if ($managePanel) $managePanel.classList.add("visible");
 
-        // Pre-remaster builds don't match the (remaster-only) expected-files
-        // manifest, so skip the healthcheck and show an "old version" notice
-        // rather than a wall of false positives.
-        const oldInfo = await detectOldInstall(db);
-        if (oldInfo) {
-          renderHealthcheck(null, oldInfo);
-        } else {
-          // A remaster build that isn't the version the manifest targets can't
-          // be file-checked (its hashes differ), so treat it like an old build:
-          // skip the check and show a version notice instead of false misses.
-          const outdated = await detectOutdatedRemaster(db);
-          if (outdated) {
-            renderHealthcheck(null, outdated);
-          } else {
-            const health = await runHealthcheck(db);
-            // renderHealthcheck() sets the footer mode (export vs re-import).
-            renderHealthcheck(health);
-          }
-        }
+        // Populate the PLAY-button version control (hidden if there's only
+        // one playable version). window.__MODDING__ is defined by now: this
+        // IIFE is async and its first await above already yielded past the
+        // later <script> blocks (which run synchronously during the initial
+        // parse, per Step 1's check that none of them are deferred/async).
+        await refreshVersionsForPlay();
+        await refreshHealthcheck();
       })();
 
       // Diagnostic report (#report route).
@@ -6804,7 +7030,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
               }
             }
             // A translation targeting a specific mod (mods.json "mod" field,
-            // e.g. "TCOAAR") is disambiguated as "TCOAAR:French" - plain
+            // e.g. "TCOAAR") is disambiguated as "TCOAAR:French"; plain
             // "BASE" translations (the base game) keep the bare name.
             var displayName = catEntry.name || id;
             if (
@@ -7357,7 +7583,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         document.body.classList.remove("show-report");
       }
 
-      // Local equivalent of the modding module's downloadBytes() - that one
+      // Local equivalent of the modding module's downloadBytes(); that one
       // lives inside the modding IIFE's private scope and isn't reachable
       // from here, so the report gets its own tiny copy of the same
       // Blob-download pattern instead of reaching into that module.
@@ -7386,7 +7612,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // missing (model.mods[i].fixable === true) and writes them into the
       // same "mod:{id}:{rel}" keys installMod() (lang-shim.js) uses, so the
       // fix is picked up on next boot with no other change needed. Custom
-      // .tcoaalmod overlays and the base game are never touched here - ask
+      // .tcoaalmod overlays and the base game are never touched here; ask
       // the user to re-import those instead (surfaced via model.mods[i].fixable
       // / model.baseGame in the report itself).
       async function fetchModBasePath(id) {
@@ -7466,7 +7692,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
     </script>
 
     <script>
-      /* ===== modding module (moved from modding.html) - isolated in an IIFE
+      /* ===== modding module (moved from modding.html), isolated in an IIFE
          so its globals never collide with the loader's. Element access is
          routed to MOD_ROOT (the shadow root). ===== */
       (function () {
@@ -7590,6 +7816,23 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         });
       }
 
+      // Delete a specific list of keys in one transaction (companion to
+      // idbDeletePrefix, for when the keys to remove don't share a common
+      // prefix, e.g. the base game's plain-keyed files).
+      function idbDeleteKeys(db, keys) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(STORE, "readwrite");
+          var store = tx.objectStore(STORE);
+          for (var i = 0; i < keys.length; i++) store.delete(keys[i]);
+          tx.oncomplete = function () {
+            resolve();
+          };
+          tx.onerror = function () {
+            reject(tx.error);
+          };
+        });
+      }
+
       async function getRegistry(db) {
         var raw = await idbGet(db, REGISTRY_KEY);
         if (!raw) return {};
@@ -7606,7 +7849,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // Base-game files are stored under their plain relative path; mod overlays
       // use a "mod:" prefix, extra imported game versions a "gamever:" prefix,
       // and bookkeeping keys use "__...__". Only the active base game is a
-      // "base file" - the others must never be picked up by readBaseFiles /
+      // "base file"; the others must never be picked up by readBaseFiles /
       // hasBaseGame (they'd corrupt the active game).
       function isBaseFileKey(k) {
         return (
@@ -7643,7 +7886,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       }
 
       // Write many key/value pairs in one transaction (a full game is thousands
-      // of files - a transaction per file would be needlessly slow).
+      // of files; a transaction per file would be needlessly slow).
       function idbPutMany(db, pairs) {
         return new Promise(function (resolve, reject) {
           var tx = db.transaction(STORE, "readwrite");
@@ -7805,7 +8048,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // transfer list so the worker *moves* the bytes instead of structured-
       // cloning a full second copy (which, for the whole project + every base
       // game at once, exhausts memory: "Data cannot be cloned, out of memory").
-      // Only pass buffers the caller is done with on this thread - transfer
+      // Only pass buffers the caller is done with on this thread; transfer
       // detaches them here.
       function collectBuffers(map, into, seen) {
         if (!map) return;
@@ -7821,9 +8064,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
 
       // Run a heavy ModRuntime method, preferring the worker. onProgress(text)
       // receives each phase line. Falls back to the main thread only when the
-      // worker infrastructure is unavailable - never to mask a real op error.
+      // worker infrastructure is unavailable; never to mask a real op error.
       // `transferList` (optional) is an array of ArrayBuffers to hand off to the
-      // worker by reference (moved, not copied) - they become detached here.
+      // worker by reference (moved, not copied); they become detached here.
       async function runHeavy(method, args, onProgress, transferList) {
         var ok = await startWorker();
         if (ok && _worker) {
@@ -7907,6 +8150,270 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         });
       }
 
+      // Which version currently occupies the plain-key namespace (the only
+      // one the SW/health-check/saves ever read). Lazily assigned the first
+      // time this feature runs, the same way the Modding tab's "imported
+      // game" entry derives its id (gameVerId(version, "imported game")) -
+      // so an install that predates this feature gets a stable id on first
+      // use instead of needing a migration step.
+      var ACTIVE_GAME_ID_KEY = "__active_game_id__";
+      async function getActiveGameId(db) {
+        var id = await idbGet(db, ACTIVE_GAME_ID_KEY);
+        if (id) return id;
+        // Nothing imported yet: don't compute/persist a placeholder id from
+        // an empty database. Without this guard, the router's initial
+        // route() call (which runs on EVERY loader.html page load, even
+        // before any game exists) reaches this function via
+        // listVersionsForPlay()/refreshVersionsForPlay(), computes
+        // gameVerId(null, "imported game") = "ximported-game" from a
+        // baseVersion() that's null only because nothing's imported YET, and
+        // PERSISTS that bogus id permanently; it's then stuck forever
+        // (short-circuited by the `if (id) return id;` above) even once a
+        // real game with a real detectable version is imported, causing the
+        // active game to permanently masquerade under the wrong id.
+        if (!(await hasBaseGame(db))) return null;
+        var v = await baseVersion(db);
+        var computed = gameVerId(v, "imported game");
+        await idbPut(db, ACTIVE_GAME_ID_KEY, computed);
+        return computed;
+      }
+
+      // Fallback label/version for the CURRENTLY ACTIVE version, for when
+      // baseVersion(db) can't read one straight out of its files (pre-2.0.12
+      // builds carry no readable version at all). Populated from the
+      // version-registry entry (itself filled in by pushGameVersion's
+      // name/hint/openVerPick fallback chain when the version was added)
+      // every time switchActiveGameVersion makes a version active; without
+      // this, an old build that was correctly labelled while parked in the
+      // Modding tab would revert to "imported game"/"?" the instant it
+      // became the active game, since listGameVersionsForPlay's active entry
+      // is otherwise derived solely from baseVersion(db).
+      var ACTIVE_GAME_META_KEY = "__active_game_meta__";
+      async function getActiveGameMeta(db) {
+        var raw = await idbGet(db, ACTIVE_GAME_META_KEY);
+        if (!raw) return null;
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // Ensures the shared _db handle is open without requiring initModding()
+      // to have run first (the PLAY-button version control can be used
+      // before the user ever opens the Modding tab).
+      async function ensureDb() {
+        if (!_db) _db = await openDb();
+        return _db;
+      }
+
+      // Every playable version: the one currently at the plain-key
+      // namespace first (active: true), then every version parked under
+      // gamever:{id}: per the registry. Shape matches what the PLAY
+      // dropdown (loader.html's outer scope, via window.__MODDING__) needs
+      // to render directly, it never touches raw IDB keys itself.
+      async function listGameVersionsForPlay(db) {
+        if (!(await hasBaseGame(db))) return [];
+        var activeId = await getActiveGameId(db);
+        var activeVersion = await baseVersion(db);
+        var activeMeta = activeVersion ? null : await getActiveGameMeta(db);
+        var out = [
+          {
+            id: activeId,
+            label:
+              verText(activeVersion) ||
+              (activeMeta && activeMeta.label) ||
+              "imported game",
+            version: activeVersion || (activeMeta && activeMeta.version) || null,
+            active: true,
+          },
+        ];
+        var reg = await getGameVerRegistry(db);
+        Object.keys(reg).forEach(function (id) {
+          var r = reg[id] || {};
+          out.push({
+            id: id,
+            label: r.label || id,
+            version: r.version || null,
+            active: false,
+          });
+        });
+        return out;
+      }
+
+      // Ask the service worker to drop its per-version derived caches
+      // (DRM payload, case-insensitive directory cache) after a swap. Waits
+      // for the SW's ack (or a 3s timeout, in case an old SW predates this
+      // message type) so the caller knows it's safe to navigate to
+      // index.html without racing a stale worker.
+      function notifyServiceWorkerResetCaches() {
+        return new Promise(function (resolve) {
+          if (
+            !("serviceWorker" in navigator) ||
+            !navigator.serviceWorker.controller
+          ) {
+            resolve();
+            return;
+          }
+          var settled = false;
+          var timer = setTimeout(function () {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+          }, 3000);
+          try {
+            var mc = new MessageChannel();
+            mc.port1.onmessage = function () {
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve();
+              }
+            };
+            navigator.serviceWorker.controller.postMessage(
+              { type: "resetGameCaches" },
+              [mc.port2],
+            );
+          } catch (e) {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              resolve();
+            }
+          }
+        });
+      }
+
+      // Bookkeeping keys that belong to a specific base-game version and
+      // must travel WITH its files rather than just being invalidated on
+      // swap (they aren't cheaply rederivable): the cached decrypted CLD
+      // merge, and the pre-remaster hash->logical map (old builds only).
+      // Written by the outer <script> block's import flow under these exact
+      // literal key names (LANG_DATA_CACHE_KEY / OLD_HASHMAP_KEY there) -
+      // this IIFE has no access to those consts, so keep these literals in
+      // sync with app/loader.html's outer scope by hand if either ever
+      // changes.
+      var CARRIED_BOOKKEEPING_KEYS = ["__lang_data__", "__oldhashmap__"];
+
+      // Physically swap which version's files occupy the plain-key
+      // namespace; the only namespace sw.js / readBaseFiles / hasBaseGame /
+      // DataManager saves ever read. Pure IDB key renames: bytes are stored
+      // encrypted either way, so nothing is decrypted/re-encrypted here.
+      //
+      // No transactional rollback across the many key renames, if the tab
+      // closes mid-swap the install can end up partial. This mirrors this
+      // project's existing risk posture elsewhere (persistGameVersion, the
+      // "Clear browser data" DB-drop flow): the existing health-check +
+      // re-import recovery path is the safety net, not bespoke rollback
+      // machinery. The ordering below is chosen so that the *only* windows
+      // where recovery would require a fresh re-import (rather than just
+      // being redundant-but-safe) are as small as possible; see the
+      // comments at each destructive step.
+      //
+      // onProgress(text, done, total) receives 5 phase updates.
+      async function switchActiveGameVersion(targetId, onProgress) {
+        var progress = onProgress || function () {};
+        var db = await ensureDb();
+        var reg = await getGameVerRegistry(db);
+        if (!reg[targetId]) {
+          throw new Error("Unknown game version: " + targetId);
+        }
+        // Captured now (before targetId's registry entry is deleted below)
+        // so it survives as ACTIVE_GAME_META_KEY; the fallback
+        // listGameVersionsForPlay uses once this version is active and
+        // baseVersion(db) can't re-derive it from the swapped-in files.
+        var targetMeta = {
+          label: reg[targetId].label || null,
+          version: reg[targetId].version || null,
+        };
+        var oldId = await getActiveGameId(db);
+        if (oldId === targetId) return;
+
+        var oldVersion = await baseVersion(db);
+        // The outgoing version may itself be one that can't be re-derived
+        // from its own files (see targetMeta above), fall back to its own
+        // active-meta record rather than mislabelling it "imported game"
+        // when it gets parked into the registry below.
+        var oldMeta = oldVersion ? null : await getActiveGameMeta(db);
+        var oldLabel = verText(oldVersion) || (oldMeta && oldMeta.label) || "imported game";
+        if (!oldVersion && oldMeta && oldMeta.version) oldVersion = oldMeta.version;
+        var targetLabel = reg[targetId].label || targetId;
+
+        progress("Reading " + oldLabel + "...", 1, 5);
+        var keys = await idbKeys(db);
+        var outgoingKeys = keys.filter(function (k) {
+          return isBaseFileKey(k) || CARRIED_BOOKKEEPING_KEYS.indexOf(k) >= 0;
+        });
+        var outgoingPairs = [];
+        for (var i = 0; i < outgoingKeys.length; i++) {
+          var k = outgoingKeys[i];
+          var v = await idbGet(db, k);
+          if (v == null) continue;
+          outgoingPairs.push([GAMEVER_PREFIX + oldId + ":" + k, v]);
+        }
+
+        // Drop any stale prior parked copy under this id (mirrors
+        // persistGameVersion's own duplicate guard), then write the fresh
+        // one. At this point the original plain keys are UNTOUCHED, so if
+        // this step fails or the tab closes, nothing has been lost; the
+        // swap simply didn't happen.
+        progress("Storing " + oldLabel + "...", 2, 5);
+        await idbDeletePrefix(db, GAMEVER_PREFIX + oldId + ":");
+        await idbPutMany(db, outgoingPairs);
+
+        // Read the target version's files now, from the SAME pre-swap keys
+        // snapshot, the write above only ever touched gamever:{oldId}:...
+        // keys, so this snapshot is still accurate for gamever:{targetId}:...
+        progress("Loading " + targetLabel + "...", 3, 5);
+        var targetPrefix = GAMEVER_PREFIX + targetId + ":";
+        var targetKeys = keys.filter(function (k) {
+          return typeof k === "string" && k.indexOf(targetPrefix) === 0;
+        });
+        var incomingPairs = [];
+        for (var j = 0; j < targetKeys.length; j++) {
+          var tk = targetKeys[j];
+          var tv = await idbGet(db, tk);
+          if (tv == null) continue;
+          incomingPairs.push([tk.slice(targetPrefix.length), tv]);
+        }
+
+        // First destructive step: by now the outgoing version's data is
+        // safely duplicated under gamever:{oldId}:..., so this is
+        // recoverable (the parked copy still exists) even if the next step
+        // never runs. Between here and the incoming write completing, the
+        // plain-key namespace has no complete base game; a crash in this
+        // narrow window is the one case that would require a fresh
+        // re-import (or manually renaming gamever:{oldId}:... keys back).
+        progress("Switching to " + targetLabel + "...", 4, 5);
+        await idbDeleteKeys(db, outgoingKeys);
+        await idbPutMany(db, incomingPairs);
+        await idbDeletePrefix(db, targetPrefix);
+
+        progress("Updating version registry...", 5, 5);
+        var newReg = await getGameVerRegistry(db);
+        delete newReg[targetId];
+        newReg[oldId] = {
+          label: oldLabel,
+          version: oldVersion,
+          fileCount: outgoingKeys.length,
+        };
+        await idbPut(db, GAMEVER_REGISTRY_KEY, JSON.stringify(newReg));
+        await idbPut(db, ACTIVE_GAME_ID_KEY, targetId);
+        await idbPut(db, ACTIVE_GAME_META_KEY, JSON.stringify(targetMeta));
+
+        // The Modding tab's own in-memory version list (if it was already
+        // populated this session) is now stale; it still thinks the
+        // outgoing version is "imported". Reset so a future visit to the
+        // Modding tab re-initializes cleanly instead of showing/operating
+        // on the wrong version.
+        _gameVersions = [];
+        _modInitDone = false;
+        _modInitStarted = false;
+
+        await notifyServiceWorkerResetCaches();
+      }
+
       // Game version (from the CLD's langVers)
       // The base CLD lives at this fixed hashed key; decrypted it begins with
       // "LANGDATA" then JSON carrying e.g. langVers "3.0.13 : <hash>". We read
@@ -7968,7 +8475,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       }
       // The most reliable version source: js/main.js carries
       // `const GAME_VERSION = "x.y.z"` in EVERY build (old 1.x/2.x and the
-      // remaster), and engine JS is never encrypted or hash-renamed - unlike the
+      // remaster), and engine JS is never encrypted or hash-renamed, unlike the
       // CLD, which only exists hashed (data/9c70...) on the remaster (older
       // builds keep logical names like data/Map001.k9a, so that file is absent).
       function mainJsVersion(raw) {
@@ -8018,6 +8525,16 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         return v ? "v" + v : null;
       }
 
+      // Best-effort: pull a version number straight out of a folder/zip name
+      // (e.g. "v2.0.10", "TCOAAL 2.0.10 depot") before falling back to the
+      // interactive "which version is this?" picker. Older (pre-2.0.12)
+      // builds carry no readable version in their own files, but the folder
+      // the user picked is very often already named after it.
+      function versionFromName(name) {
+        var m = String(name || "").match(/(\d+\.\d+(?:\.\d+)?)/);
+        return m ? m[1] : null;
+      }
+
       // The set of game versions available for installing mods: the imported
       // game (first, not removable) plus any extra versions the user adds via
       // "+", so a mod that targets a specific (often older) build can be
@@ -8033,17 +8550,169 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // (once) by the folder/zip onchange handlers via pushGameVersion.
       var _dlImportHint = null; // { version, name } | null
 
+      // Old-build detection/decryption + CLD extraction for a version added
+      // via "+". The primary import (storeFiles, in the outer <script>
+      // scope) runs this against IDB directly; a version added here needs
+      // the exact same pipeline run against an in-memory files map instead,
+      // since it isn't (necessarily) the active game. Bridged via
+      // window.__oldVersionImport (see that export's comment).
+
+      // Adapt a { relPath: Uint8Array } map to the lazy { path, getBuffer }
+      // entry shape prepareOldVersionImport() expects (the same shape the
+      // primary import feeds it).
+      function entriesFromFileMap(files) {
+        return Object.keys(files).map(function (rel) {
+          return {
+            path: rel,
+            getBuffer: function () {
+              return Promise.resolve(files[rel]);
+            },
+          };
+        });
+      }
+
+      // Resolve a prepareOldVersionImport() entries array (whose `path` may
+      // only finalize after getBuffer() runs, for .k9a containers) into a
+      // plain { relPath: Uint8Array } map.
+      async function materializeEntries(entries) {
+        var out = {};
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i];
+          var buf = await e.getBuffer();
+          var p = e.path;
+          out[p] = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+        }
+        return out;
+      }
+
+      // Extract the CLD (remaster hashed file, or an old build's
+      // languages/<lang>/dialogue.loc) into __lang_data__, writing straight
+      // into the files map. Mirrors the outer scope's extractLangData;
+      // non-fatal on failure (logs and leaves the map unchanged, matching
+      // this flow's existing tolerant style; see pushGameVersion's
+      // persistGameVersion try/catch below).
+      function extractLangDataIntoMap(files, cldPathOverride) {
+        var OV = window.__oldVersionImport;
+        var cldKey = cldPathOverride || OV.CLD_IDB_KEY;
+        var raw = files[cldKey];
+        if (!raw) {
+          console.warn(
+            "[loader] CLD file (" + cldKey + ") not found in added version",
+          );
+          return;
+        }
+        try {
+          if (cldPathOverride) {
+            var jsonStr = OV.parseLocText(raw);
+            JSON.parse(jsonStr);
+            files[OV.LANG_DATA_CACHE_KEY] = jsonStr;
+            return;
+          }
+          var decrypted = OV.cldDekit(raw);
+          if (!decrypted || decrypted.length < 9) return;
+          if (new TextDecoder().decode(decrypted.slice(0, 8)) !== "LANGDATA")
+            return;
+          var jsonStr2 = new TextDecoder().decode(decrypted.slice(8));
+          JSON.parse(jsonStr2);
+          files[OV.LANG_DATA_CACHE_KEY] = jsonStr2;
+        } catch (e) {
+          console.warn("[loader] CLD extraction failed for added version:", e);
+        }
+      }
+
+      // Build the hash->logical asset map an old build needs (see the outer
+      // scope's buildOldHashMap) directly into the files map.
+      async function buildOldHashMapIntoMap(files) {
+        var OV = window.__oldVersionImport;
+        var map = {};
+        var keys = Object.keys(files);
+        for (var i = 0; i < keys.length; i++) {
+          var p = keys[i];
+          if (!/^(data|img|audio|movies)\//i.test(p)) continue;
+          try {
+            map[await OV.swHashPath(p)] = p;
+          } catch (e) {}
+        }
+        files[OV.OLD_HASHMAP_KEY] = map;
+      }
+
+      // Run the pipeline: detect+decrypt an old (pre-remaster) build, or
+      // just extract the CLD for a remaster. Returns the (possibly
+      // rewritten) files map, with __lang_data__ (+ __oldhashmap__ for an
+      // old build) added; these then persist and swap in/out via
+      // CARRIED_BOOKKEEPING_KEYS exactly like the primary import's game.
+      async function convertOldVersionFiles(files) {
+        var OV = window.__oldVersionImport;
+        if (!OV) return files; // outer scope not ready, shouldn't happen
+        var gameInfo = null;
+        try {
+          gameInfo = await OV.prepare(entriesFromFileMap(files));
+        } catch (e) {
+          console.warn(
+            "[loader] old-version detection failed for added version:",
+            e,
+          );
+        }
+        if (gameInfo) {
+          files = await materializeEntries(gameInfo.entries);
+          extractLangDataIntoMap(files, gameInfo.cldPath);
+          await buildOldHashMapIntoMap(files);
+        } else {
+          extractLangDataIntoMap(files, null);
+        }
+        return files;
+      }
+
+      // Show a placeholder chip (spinner, no remove button) the instant the
+      // user picks a folder/zip, since reading + converting the files (old-
+      // build decryption, CLD extraction) can take a while for a large game;
+      // the version shouldn't just be invisible until all of that
+      // finishes. pushGameVersion() replaces it with the real chip once done
+      // (see its `pending` parameter); removePendingGameVersion() is the
+      // failure-path cleanup when reading/pushing throws.
+      function addPendingGameVersion(label) {
+        var entry = { pending: true, label: label };
+        _gameVersions.push(entry);
+        renderGameVersions();
+        return entry;
+      }
+      function removePendingGameVersion(entry) {
+        var idx = _gameVersions.indexOf(entry);
+        if (idx >= 0) _gameVersions.splice(idx, 1);
+        renderGameVersions();
+      }
+
       // Record an imported game version. Prefer the version read from its own
       // CLD; failing that, a hint (e.g. the Download wizard's picked version);
       // failing that, the folder/file name. The entry is shown immediately and
       // persisted to IDB (so it survives reload, shows as imported on the
-      // Download tab, and stays usable for version-gated mods). Returns the
-      // pushed entry.
-      async function pushGameVersion(files, fallbackName, hint) {
-        var v = baseVersionFromFiles(files) || (hint && hint.version) || null;
-        // Older 1.x/2.x builds store no readable version. When we can't detect
-        // one (and the Download wizard didn't supply a hint), ask the user which
-        // build it is - mods that target a specific version need to know.
+      // Download tab, and stays usable for version-gated mods). `pending`
+      // (optional) is the placeholder chip (addPendingGameVersion) to replace
+      // once the real entry is ready. Returns the pushed entry.
+      async function pushGameVersion(files, fallbackName, hint, pending) {
+        // Normalize to the www root the same way the primary game import does
+        // (normalizeFolderPath): the user may have picked the version's game
+        // root folder (containing a www/ subfolder) rather than www/ itself.
+        // Without this, keys end up "www/js/main.js" instead of "js/main.js" -
+        // baseVersionFromFiles still detects the version (its fileBySuffix
+        // tolerates the prefix) so the entry looks fine in the list, but once
+        // swapped into the plain-key namespace, baseVersion()/hasBaseGame()'s
+        // direct/prefix key lookups silently fail.
+        files = toWwwRoot(files);
+        // Detect/decrypt an old build and extract the CLD into __lang_data__
+        // (see convertOldVersionFiles); without this, a version added here
+        // never got the same processing the primary import gives the active
+        // game, so switching to it later failed with "Missing CLD".
+        files = await convertOldVersionFiles(files);
+        var v =
+          baseVersionFromFiles(files) ||
+          (hint && hint.version) ||
+          versionFromName(fallbackName) ||
+          null;
+        // Older 1.x/2.x builds store no readable version, and neither the
+        // Download wizard's hint nor the folder/zip name yielded one either:
+        // ask the user which build it is; mods that target a specific
+        // version need to know.
         if (!v) v = await openVerPick();
         var label = verText(v) || (hint && hint.name) || fallbackName;
         var id = gameVerId(v, label);
@@ -8052,6 +8721,10 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         for (var i = _gameVersions.length - 1; i >= 0; i--) {
           if (!_gameVersions[i].imported && _gameVersions[i].id === id)
             _gameVersions.splice(i, 1);
+        }
+        if (pending) {
+          var pidx = _gameVersions.indexOf(pending);
+          if (pidx >= 0) _gameVersions.splice(pidx, 1);
         }
         var entry = {
           id: id,
@@ -8077,6 +8750,10 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         if (!box) return;
         box.innerHTML = "";
         _gameVersions.forEach(function (v) {
+          if (v.pending) {
+            box.appendChild(pendingChipEl(v.label));
+            return;
+          }
           box.appendChild(
             chipEl(
               v.label,
@@ -8303,7 +8980,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           var rt = await loadRuntime();
 
           // Light ZIP probe: entry names + the tiny mod.json only. This must NOT
-          // inflate the payloads - an overhaul archive is hundreds of MB, and
+          // inflate the payloads; an overhaul archive is hundreds of MB, and
           // decompressing it on the main thread is exactly what used to wedge the
           // "Analyzing..." spinner. zinfo is null when the file isn't a ZIP.
           var zinfo = null;
@@ -8474,9 +9151,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
 
       // Classify a packaged full-game overhaul .zip from its entry names alone:
       // locate the www/ root (which may sit inside a wrapper folder) or the game
-      // folders at the archive root. Returns { prefix, count } - `prefix` is the
+      // folders at the archive root. Returns { prefix, count }: `prefix` is the
       // path to strip (e.g. "wrapper/www/", or "" when the game folders are at
-      // the root) - or null. The bytes are unzipped later (in the worker) via
+      // the root), or null. The bytes are unzipped later (in the worker) via
       // ModRuntime.unpackOverlay(prefix); the data is plain, so the SW's dekit is
       // a no-op and the files serve straight from mod:{tag}:{rel}.
       var GAME_DIR_RE = /^(data|img|audio|js|fonts|movies|languages)\//;
@@ -8587,7 +9264,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         for (var i = 0; i < _gameVersions.length; i++) {
           var v = _gameVersions[i];
           // Every entry carries its version (read from the CLD, a Download hint,
-          // or the persisted registry), so match on that directly - a persisted
+          // or the persisted registry), so match on that directly; a persisted
           // entry has no in-memory files to re-read.
           var ver = v.imported ? v.version || _importedVersion : v.version;
           if (ver === TOMB_BASE_VERSION) return v;
@@ -9077,6 +9754,23 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         }
         return chip;
       }
+      // A placeholder chip shown the instant a version is picked, while its
+      // files are still being read/converted (see addPendingGameVersion) -
+      // a spinner instead of the usual remove (x), since there's nothing to
+      // remove yet. Laid out like a real chip (label left, control right) so
+      // the spinner sits where the x button will once it resolves, instead
+      // of before the label text.
+      function pendingChipEl(label) {
+        var chip = document.createElement("span");
+        chip.className = "chip";
+        var t = document.createElement("span");
+        t.textContent = label;
+        chip.appendChild(t);
+        var spin = document.createElement("span");
+        spin.className = "spinner spinner-trail";
+        chip.appendChild(spin);
+        return chip;
+      }
       function selectBtn(label, onClick) {
         var b = document.createElement("button");
         b.className = "action-btn small";
@@ -9324,7 +10018,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // An editable RPG Maker MV project (what Build expects) always carries a
       // Game.rpgproject and/or a plain data/System.json. A packed/shipped www
       // (hashed + encrypted data, e.g. the output of Pack, or a game's own www)
-      // has neither - those must be extracted back to a project before building.
+      // has neither; those must be extracted back to a project before building.
       function looksLikeProject(files) {
         return Object.keys(files).some(function (k) {
           return (
@@ -9371,9 +10065,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           // game at once is what runs the browser out of memory at the diff step.
           var useWorker = await startWorker();
 
-          // Step 0 - If the upload is an already-packed/shipped www instead of an
+          // Step 0: If the upload is an already-packed/shipped www instead of an
           // editable project, extract it back to a project first (and skip the
-          // pack step below - there is nothing to re-pack). This lets a modder
+          // pack step below; there is nothing to re-pack). This lets a modder
           // build straight from a packed game/mod folder.
           var projectFiles = _buildProject.files;
           var projectIsUpload = looksLikeProject(projectFiles);
@@ -9391,7 +10085,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             // user's _buildProject upload).
             projectFiles = rtLite.readZip(projZip);
           } else {
-            // Step 1 - Pack (validation only): re-pack the edited project into a
+            // Step 1: Pack (validation only): re-pack the edited project into a
             // playable www to prove the edits are valid (a broken project throws
             // here, before anything ships). The packed www is NEVER downloaded -
             // that would hand out a full copy of the game (illegal). It stays an
@@ -9401,7 +10095,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             await runHeavy("packProject", [projectFiles], onBuildProgress);
           }
 
-          // Step 2 - Build: diff the project against each base into the mod.
+          // Step 2: Build: diff the project against each base into the mod.
           onBuildProgress(
             "Comparing against each game version, this can take a while...",
           );
@@ -9490,7 +10184,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           );
         } finally {
           // The project tree was transferred to the worker (its buffers are now
-          // detached), so it can't back another build - drop it so the user
+          // detached), so it can't back another build; drop it so the user
           // re-picks rather than silently building from empty/detached data.
           if (consumedProject) _buildProject = null;
           renderBuildState();
@@ -9961,7 +10655,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       var DL_PATH_DEFAULT_NOTE =
         "Best-guess default: paste the console output above to correct it for " +
         "your machine.";
-      // Always display the destination with forward slashes - Steam's console
+      // Always display the destination with forward slashes: Steam's console
       // (and our Windows default) hand back backslashes, which are awkward to
       // read and to paste back into the folder picker. Forward slashes work the
       // same for the user on every platform.
@@ -10164,20 +10858,40 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           var name =
             (this.files[0].webkitRelativePath || "version").split("/")[0] ||
             "version";
-          var files = await filesFromFileList(this.files);
           var hint = _dlImportHint;
           _dlImportHint = null;
+          // input.files is a LIVE FileList tied to the input element -
+          // resetting this.value below empties it out from under a later
+          // read, not just this one reference. Snapshot into a plain array
+          // (the individual File objects inside stay valid/readable after
+          // the reset; only the FileList container itself is live) before
+          // touching this.value.
+          var fileArray = Array.from(this.files);
           this.value = "";
-          await pushGameVersion(files, name, hint);
+          var pending = addPendingGameVersion(name);
+          try {
+            var files = await filesFromFileList(fileArray);
+            await pushGameVersion(files, name, hint, pending);
+          } catch (e) {
+            console.warn("[loader] Could not add game version:", e);
+            removePendingGameVersion(pending);
+          }
         };
         $("ver-zip").onchange = async function () {
           if (!this.files.length) return;
           var fallback = this.files[0].name.replace(/\.zip$/i, "");
-          var files = await readZipFile(this.files[0]);
           var hint = _dlImportHint;
           _dlImportHint = null;
+          var file = this.files[0];
           this.value = "";
-          await pushGameVersion(files, fallback, hint);
+          var pending = addPendingGameVersion(fallback);
+          try {
+            var files = await readZipFile(file);
+            await pushGameVersion(files, fallback, hint, pending);
+          } catch (e) {
+            console.warn("[loader] Could not add game version:", e);
+            removePendingGameVersion(pending);
+          }
         };
 
         // Create: pick which game version (from the Modding list) to extract.
@@ -10234,14 +10948,45 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           if (window.__moddingShowLoader) window.__moddingShowLoader();
           return;
         }
+        // Wire the shared modals (chooser, verpick, download) before using
+        // any of them below; openVerPick() needs verpick-ok/verpick-cancel
+        // already wired, and this used to only happen at the end of this
+        // function (see wireModdingTabs() further down, now removed from
+        // there).
+        wireModdingTabs();
         // Read the imported game's version once (used across the tabs), and
         // seed it as the imported version chip: the default Create selection
-        // and the default Build target.
+        // and the default Build target. A base game whose own files carry no
+        // readable version (pre-2.0.12 builds) would otherwise be stuck
+        // labelled "imported game" forever; the "+" add flow already asks
+        // the user via openVerPick() in this situation (see pushGameVersion);
+        // give the base game the same treatment here, once, caching the
+        // answer in ACTIVE_GAME_META_KEY (the same fallback
+        // listGameVersionsForPlay/switchActiveGameVersion already read) so
+        // it isn't re-asked on every Modding tab visit.
         _importedVersion = await baseVersion(_db);
+        var importedMeta = null;
+        if (!_importedVersion) {
+          importedMeta = await getActiveGameMeta(_db);
+          if (!importedMeta) {
+            var guessed = await openVerPick();
+            importedMeta = {
+              label: verText(guessed) || "imported game",
+              version: guessed || null,
+            };
+            try {
+              await idbPut(_db, ACTIVE_GAME_META_KEY, JSON.stringify(importedMeta));
+            } catch (e) {}
+          }
+        }
         _gameVersions.push({
           id: gameVerId(_importedVersion, "imported game"),
-          label: verText(_importedVersion) || "imported game",
-          version: _importedVersion,
+          label:
+            verText(_importedVersion) ||
+            (importedMeta && importedMeta.label) ||
+            "imported game",
+          version:
+            _importedVersion || (importedMeta && importedMeta.version) || null,
           imported: true,
         });
         _createSelected = _gameVersions[0];
@@ -10294,8 +11039,6 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
 
         _modInitDone = true;
 
-        wireModdingTabs();
-
         // Open the tab named in the URL hash (modding.html#create-project, ...),
         // defaulting to the Modding home.
         applyHashTab();
@@ -10306,6 +11049,12 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         init: initModding,
         applyHash: applyHashTab,
         hashes: Object.keys(TAB_BY_HASH),
+        listVersionsForPlay: function () {
+          return ensureDb().then(listGameVersionsForPlay);
+        },
+        switchVersion: function (targetId, onProgress) {
+          return switchActiveGameVersion(targetId, onProgress);
+        },
       };
 
       // Resolve the in-shadow contact link (the loader's global resolver
@@ -10376,10 +11125,17 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             else document.body.classList.toggle("show-modding", show);
           }
           if (show && MOD) MOD.applyHash(); // select the tab named by the hash
+          // Returning to the loader view: the Modding tab may have
+          // added/removed a game version since we last showed the PLAY
+          // button, and goToLoader() uses history.replaceState (no
+          // hashchange event), so this is the one funnel point that always
+          // runs on that transition.
+          if (!show && window.__refreshVersionsForPlay)
+            window.__refreshVersionsForPlay();
         }
 
         // Called by the modding module when it finds no imported game: drop the
-        // modding view at once (no animation - we are mid-bounce) and clean the
+        // modding view at once (no animation; we are mid-bounce) and clean the
         // URL so a refresh lands on the loader.
         window.__moddingShowLoader = function () {
           shown = false;

@@ -979,7 +979,7 @@
   /**
    * Delete every `mod:{modId}:{relPath}` asset whose relPath is NOT in
    * `keepSet` (a plain object used as a set of current relPaths). Used after a
-   * successful (re)install to purge files the mod no longer ships - e.g. a
+   * successful (re)install to purge files the mod no longer ships, e.g. a
    * translation that switched its dialogue source from dialogue.txt to
    * dialogue.csv would otherwise leave the stale .txt behind, which
    * extractModLangData could then re-parse into an outdated CLD cache.
@@ -1409,7 +1409,7 @@
 
   // Uses TextEncoder rather than a plain btoa(str) so it's correct
   // regardless of the string's character range (save content happens to be
-  // ASCII-only today - LZString's base64 alphabet - but this doesn't rely
+  // ASCII-only today (LZString's base64 alphabet), but this doesn't rely
   // on that staying true). Chunked to avoid blowing the call stack on
   // String.fromCharCode.apply for a large payload.
   function textToBase64(str) {
@@ -2295,8 +2295,8 @@
           });
           putAsset(db, "__mod_meta__:" + modId, meta, function () {
             // Purge files this (re)install no longer ships so a stale source
-            // - e.g. an old dialogue.txt after a switch to dialogue.csv -
-            // can't be re-parsed into an outdated lang cache. Build the keep
+            // (e.g. an old dialogue.txt after a switch to dialogue.csv) can't
+            // be re-parsed into an outdated lang cache. Build the keep
             // set from the current file list.
             var keepSet = {};
             for (var ki = 0; ki < files.length; ki++) keepSet[files[ki]] = 1;
@@ -3472,7 +3472,7 @@
 
       // Prompt to replace the current global save with an imported one. Uses a
       // dedicated confirm window so the delete flow's window is untouched.
-      // `afterFn` runs once the prompt resolves (either choice) - it chains the
+      // `afterFn` runs once the prompt resolves (either choice); it chains the
       // regular-import summary popup.
       Scene_File.prototype._promptGlobalReplace = function (imp, afterFn) {
         this._pendingGlobalContents = imp;
@@ -4234,7 +4234,7 @@
         // A save taken mid-dialogue carries the on-screen text in
         // contents.message (browser-shim's makeSaveContents override, pure-text
         // lines only). Stand in a deep copy so the preview can render the actual
-        // line over the map - a copy because driving Window_Message can call
+        // line over the map: a copy because driving Window_Message can call
         // terminateMessage -> $gameMessage.clear(), which would otherwise empty
         // the shared, cross-visit contents cache and blank later previews.
         var savedMsg = contents.message;
@@ -4263,11 +4263,11 @@
       // windowskin bitmaps and fires the YEP name-box refresh now, so the shared
       // waitReady loop covers their images before the snap.
       //
-      // TCOAAL's dialogue isn't one self-contained window - two plugins put
+      // TCOAAL's dialogue isn't one self-contained window: two plugins put
       // pieces on the *scene*:
       //   - YEP_MessageCore.createSubWindows does SceneManager._scene.addChild
       //     (this._nameWindow): the speaker name box. Built with the live scene
-      //     it lands on Scene_Load - on top of the menu and never removed
+      //     it lands on Scene_Load, on top of the menu and never removed
       //     between rows. We point SceneManager._scene at the snapshot stage so
       //     it lands in the snapshot instead (below the menu, torn down with it).
       //   - GALV_MessageBackground draws the actual message box as a scene
@@ -4279,7 +4279,7 @@
       //     $bust(n) = SceneManager._scene._spriteset._messageBustSprites[n], so
       //     the stage is shimmed with _spriteset/_messageWindow for that lookup.
       //     Busts start at opacity 0 and fade in via their own update(), which
-      //     nothing drives here - fillSnapshotMessageWindow settles them. The
+      //     nothing drives here; fillSnapshotMessageWindow settles them. The
       //     body bust is a window child (rendered bundled with / dimmed by the
       //     window); it's lifted out onto its own stage layer below the box.
       //
@@ -4289,7 +4289,7 @@
       //
       // Returns a bundle (window/bg/nameWindow/spriteset), all already added to
       // the stage in z-order, or null when there's no text / a class is missing /
-      // a plugin throws - then the snapshot is simply the map without dialogue.
+      // a plugin throws; then the snapshot is simply the map without dialogue.
       function buildSnapshotMessageWindow(stage, spriteset) {
         try {
           if (
@@ -4304,7 +4304,7 @@
           var prevScene = SceneManager._scene;
           try {
             // Sub-windows (YEP name box) attach to SceneManager._scene during
-            // construction/startMessage - redirect that to the snapshot stage.
+            // construction/startMessage; redirect that to the snapshot stage.
             // Also shim _spriteset/_messageWindow so Irina's $bust(n) lookup
             // resolves to the snapshot's own sprites instead of throwing.
             SceneManager._scene = stage;
@@ -4318,7 +4318,7 @@
             mw.startMessage();
             mw.openness = 255;
             // Rebuild persistent scene busts (non-speaking characters) from the
-            // saved state - here, while the scene is shimmed so $bust resolves.
+            // saved state, here, while the scene is shimmed so $bust resolves.
             restoreSavedBusts();
           } finally {
             SceneManager._scene = prevScene;
@@ -4338,7 +4338,7 @@
           // own layer. As a window child it renders bundled with the text and in
           // front of the GALV background box, and the window's own render (the
           // openness-clipped contents pass, the alpha-0 skin container) muddies
-          // it - which shows up as a translucent bust over hidden text. The
+          // it, which shows up as a translucent bust over hidden text. The
           // requested z-order wants every bust *behind* the box + text, so move
           // it onto the stage and convert its window-local position to stage
           // coordinates (the window has scale 1 and no rotation).
@@ -4403,7 +4403,7 @@
       // $gameSystem._vnBusts at save time. Irina keeps no bust state in the save
       // and only the current line's speaking bust is reconstructable from
       // $gameMessage, so without this the non-speaker is missing. Slot 0 (the
-      // body bust) is skipped - the message rebuild already drives it from the
+      // body bust) is skipped: the message rebuild already drives it from the
       // [BUST] faceName. Must run inside the scene-shimmed span so $bust(n)
       // resolves to the snapshot's spriteset busts; loadBitmap reserves the
       // image (waitReady covers it) and the transform/opacity/tone/expression
@@ -4444,7 +4444,7 @@
       // images are loaded: draw the face, type the line instantly, then settle
       // the GALV background sprite. The saved state doesn't record which
       // page/character was visible, so we show the first page (stop at the first
-      // real page break) - the same line the in-game reload re-displays.
+      // real page break); the same line the in-game reload re-displays.
       function fillSnapshotMessageWindow(bundle) {
         if (!bundle || !bundle.window) return;
         var mw = bundle.window;
@@ -4537,7 +4537,7 @@
             picHost.update();
           }
           // On-screen dialogue (message box + text + speaker name), above the
-          // pictures - the live scene draws these over the spriteset. Built here
+          // pictures; the live scene draws these over the spriteset. Built here
           // (adds itself to the stage in z-order) so its images register before
           // waitReady; painted in finalizeSnap once they're loaded.
           msgBundle = buildSnapshotMessageWindow(stage, spriteset);
@@ -7255,6 +7255,127 @@
     );*/
   }
 
+  // Audio load failures: AudioStreaming.js's own ResourceHandler.fetchWithRetry
+  // (not stock rpg_core.js, a third-party plugin, never edited directly) has
+  // two failure branches. An immediate 4xx (the realistic "missing file" case)
+  // crashes synchronously via SceneManager.catchException before this function
+  // could otherwise intervene, so the whole function is replaced rather than
+  // wrapped: a thin try/catch wrap would run its catch only after
+  // catchException already showed the permanent crash overlay. Only the two
+  // failure branches change; the success-path fetch/response handling is
+  // copied verbatim from the shipped plugin so behavior for a working asset
+  // is unchanged.
+  function patchAudioResourceHandler() {
+    if (typeof ResourceHandler === "undefined") return;
+    if (typeof ResourceHandler.fetchWithRetry !== "function") return;
+    if (ResourceHandler.__ignorePatchApplied) return;
+    ResourceHandler.__ignorePatchApplied = true;
+
+    function alwaysIgnoreEnabled() {
+      try {
+        return localStorage.getItem("_alwaysIgnoreLoadErrors") === "1";
+      } catch (e) {
+        return false;
+      }
+    }
+
+    ResourceHandler.fetchWithRetry = async function (
+      method,
+      url,
+      _retryCount,
+    ) {
+      if (_retryCount === undefined) _retryCount = 0;
+      let retry;
+      try {
+        const response = await (!window.cordova
+          ? fetch(url, { credentials: "same-origin" })
+          : new Promise((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.responseType = "blob";
+              xhr.onload = () =>
+                resolve(new Response(xhr.response, { status: xhr.status }));
+              xhr.onerror = reject;
+              xhr.open("GET", url);
+              xhr.send();
+            }));
+        if (response.ok) {
+          switch (method) {
+            case "stream":
+              if (response.body) {
+                return response.body.getReader();
+              }
+              const value = new Uint8Array(await response.arrayBuffer());
+              return {
+                _done: false,
+                read() {
+                  if (!this._done) {
+                    this._done = true;
+                    return Promise.resolve({ done: false, value });
+                  } else {
+                    return Promise.resolve({ done: true });
+                  }
+                },
+              };
+            case "arrayBuffer":
+            case "blob":
+            case "formData":
+            case "json":
+            case "text":
+              return await response[method]();
+            default:
+              return Promise.reject(new Error("method not allowed"));
+          }
+        } else if (response.status < 500) {
+          // client error
+          retry = false;
+        } else {
+          // server error
+          retry = true;
+        }
+      } catch (error) {
+        if (Utils.isNwjs() || window.cordova) {
+          // local file error
+          retry = false;
+        } else {
+          // network error
+          retry = true;
+        }
+      }
+      if (!retry) {
+        const error = new Error("Failed to load: " + url);
+        if (alwaysIgnoreEnabled()) {
+          console.warn(
+            "[ignore-load-errors] auto-ignoring failed audio load:",
+            url,
+          );
+          throw error;
+        }
+        await new Promise((resolveDismiss) => {
+          window.__pendingLoadFailures.push({
+            target: null,
+            resolve: resolveDismiss,
+          });
+          Graphics.printLoadingError(url, { allowRetry: false });
+          SceneManager.stop();
+        });
+        throw error;
+      } else if (_retryCount < this._defaultRetryInterval.length) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, this._defaultRetryInterval[_retryCount]),
+        );
+        return this.fetchWithRetry(method, url, _retryCount + 1);
+      } else {
+        if (this._reloaders.length === 0) {
+          Graphics.printLoadingError(url);
+          SceneManager.stop();
+        }
+        return new Promise((resolve) =>
+          this._reloaders.push(() => resolve(this.fetchWithRetry(method, url, 0))),
+        );
+      }
+    };
+  }
+
   // Hook into Scene_Boot.prototype.start
   //
   // The DRM payload (loaded via plugins AFTER lang-shim.js) overwrites
@@ -7263,6 +7384,7 @@
   // after all plugin scripts have executed.
 
   function hookSceneBoot() {
+    patchAudioResourceHandler();
     if (typeof Scene_Boot === "undefined") return;
 
     // Re-apply the isReady gate AFTER the DRM payload has executed.

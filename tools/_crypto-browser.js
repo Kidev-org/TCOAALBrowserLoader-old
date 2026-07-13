@@ -2,10 +2,10 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Browser `crypto` for the bundled mod runtime. The tools use exactly one
- * crypto API - crypto.createHash("sha256") -> update() -> digest("hex") - yet
+ * crypto API (crypto.createHash("sha256") -> update() -> digest("hex")), yet
  * node's `require("crypto")` resolves (via crypto-browserify) to the full
  * asymmetric stack (elliptic, asn1.js, diffie-hellman, public-encrypt,
- * create-ecdh, browserify-sign, bn.js x7, ...) - ~1.5 MB of code nothing here
+ * create-ecdh, browserify-sign, bn.js x7, ...): ~1.5 MB of code nothing here
  * calls. esbuild aliases the Node `crypto` import to this module (see
  * scripts/build-mod-runtime.js), trimming the bundle to a tiny pure-JS SHA-256.
  *

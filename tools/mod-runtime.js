@@ -148,7 +148,7 @@ async function applyTcoaalmod(baseFiles, modBytes) {
  * offline into a plain `www/` and ship that whole tree as an overhaul overlay.
  *
  * @param {Object<string,Uint8Array>} baseFiles  the base game www (shipped form,
- *        keyed by relative path) the mod targets - must be the version the mod
+ *        keyed by relative path) the mod targets; must be the version the mod
  *        was made for (TCOAAL 2.0.14), or build() throws on the patch mismatch.
  * @param {Uint8Array} modBytes  the Tomb mod's .zip bytes (carries mod.json).
  * @returns {Promise<{tag,name,files}>}  `files` is the flattened www to store as
@@ -165,7 +165,7 @@ async function buildTomb(baseFiles, modBytes) {
 
     // Unpack the mod .zip, anchoring /diff at the directory that holds mod.json
     // (the archive may wrap the mod in a top-level folder, with or without a
-    // www/ subdir - assembleMod resolves www/ from there).
+    // www/ subdir: assembleMod resolves www/ from there).
     const zip = share.zipRead(Buffer.from(modBytes));
     let modJsonRel = null;
     for (const [name] of zip) {
@@ -304,7 +304,7 @@ function titleFromSystemBytes(buf) {
 /**
  * Read ONLY data/System.json out of a packaged overhaul .zip and return the
  * mod's player-facing title (its `sysLabel.Game`), or null. Like inspectZip this
- * walks the central directory and inflates a single small entry - it never
+ * walks the central directory and inflates a single small entry; it never
  * touches the hundreds of MB of assets, so it is safe on the main thread during
  * the importer's analysis step.
  *

@@ -424,14 +424,49 @@
     }
   }
 
+  // GAME_VERSION is declared `const` at the top level of main.js: a
+  // classical (non-module) script, so it's a global LEXICAL binding, not a
+  // `window` property. `window.GAME_VERSION` is therefore always undefined;
+  // reading the bare identifier is required. `typeof` on it stays safe even
+  // when main.js never declares it at all (pre-2.0.12 builds predate the
+  // constant): typeof on a wholly undeclared identifier returns "undefined"
+  // rather than throwing.
+  function readGameVersionGlobal() {
+    return typeof GAME_VERSION === "string" ? GAME_VERSION : null;
+  }
+
   // Pull the "v3.0.13" suffix the DRM appends to the game title; fall back to
   // the GAME_VERSION global (defined in www/js/main.js).
   function saveVersion(info) {
     var m = info && info.title && String(info.title).match(/\sv(\d[\w.]*)$/i);
     if (m) return "v" + m[1];
-    if (typeof window.GAME_VERSION === "string" && window.GAME_VERSION)
-      return "v" + window.GAME_VERSION;
-    return "";
+    var gv = readGameVersionGlobal();
+    return gv ? "v" + gv : "";
+  }
+
+  // The currently-running build's version, formatted like saveVersion()'s
+  // output ("v3.0.13"), or null when GAME_VERSION isn't defined (pre-
+  // remaster 1.x builds predate that constant).
+  function currentGameVersionText() {
+    var gv = readGameVersionGlobal();
+    return gv ? "v" + gv : null;
+  }
+
+  // Plain dot-numeric version compare ("v3.0.13" vs "2.0.14", "v" prefix
+  // optional on either side). Returns -1 (a < b), 0 (equal), 1 (a > b), or
+  // null when either side isn't cleanly dot-numeric (an unrecognized build
+  // label): callers skip the comparison rather than guessing in that case.
+  function compareVersionText(a, b) {
+    var pa = String(a).replace(/^v/i, "").split(".");
+    var pb = String(b).replace(/^v/i, "").split(".");
+    var len = Math.max(pa.length, pb.length);
+    for (var i = 0; i < len; i++) {
+      var na = parseInt(pa[i], 10);
+      var nb = parseInt(pb[i], 10);
+      if (isNaN(na) || isNaN(nb)) return null;
+      if (na !== nb) return na < nb ? -1 : 1;
+    }
+    return 0;
   }
 
   // Shared API consumed by lang-shim's annotation editor.
@@ -686,7 +721,7 @@
 
     // Non-blocking crash (prevent alert() freeze + nw.gui close). A DRM
     // fatal crash has no engine-drawn UI of its own (unlike the resource-load
-    // failure screen), so reuse index.html's #boot-error overlay - still
+    // failure screen), so reuse index.html's #boot-error overlay, still
     // present in the DOM post-boot, via __showFatalError, which is
     // showError()'s logic without the bootDone gate. Its "Show report"
     // button (index.html) calls window.__quitToLoader itself, so no extra
@@ -717,16 +752,117 @@
     // second button that tears the game down and sends the user to
     // /loader.html#report with the failing URL attached, styled to match
     // "Retry".
+    // Ignore / Always ignore: let the player continue past a genuinely
+    // missing/broken asset instead of being stuck on Retry forever (images)
+    // or hitting a hard crash (audio, see the ResourceHandler.fetchWithRetry
+    // patch in lang-shim.js's hookSceneBoot). Every resource that has given
+    // up on itself (an image bitmap via _onError, or a stalled audio fetch)
+    // registers a { target, resolve } entry in this array; performIgnore()
+    // below is the single drain point both the button and "always ignore"
+    // auto-trigger use.
+    window.__pendingLoadFailures = [];
+
+    function isAlwaysIgnoreEnabled() {
+      try {
+        return localStorage.getItem("_alwaysIgnoreLoadErrors") === "1";
+      } catch (e) {
+        return false;
+      }
+    }
+    function setAlwaysIgnoreEnabled() {
+      try {
+        localStorage.setItem("_alwaysIgnoreLoadErrors", "1");
+      } catch (e) {}
+    }
+
+    // Resolves every currently-pending failure (not just the one shown in
+    // the overlay's message, only the FIRST failure in a batch ever shows
+    // the overlay, per stock ResourceHandler.createLoader's
+    // "reloaders.length === 0" guard; the rest queue silently), drops the
+    // stock retry queue without invoking any retryMethod, and resumes the
+    // engine loop. Safe to call even when nothing is pending (e.g. a manual
+    // Retry already succeeded on its own).
+    function performIgnore() {
+      var pending = window.__pendingLoadFailures || [];
+      window.__pendingLoadFailures = [];
+      for (var i = 0; i < pending.length; i++) {
+        try {
+          pending[i].resolve();
+        } catch (e) {}
+      }
+      try {
+        if (typeof ResourceHandler !== "undefined" && ResourceHandler._reloaders) {
+          ResourceHandler._reloaders.length = 0;
+        }
+      } catch (e) {}
+      try {
+        Graphics.eraseLoadingError();
+      } catch (e) {}
+      try {
+        if (typeof SceneManager !== "undefined") SceneManager.resume();
+      } catch (e) {}
+    }
+
     if (
       typeof Graphics !== "undefined" &&
       typeof Graphics.printLoadingError === "function"
     ) {
       var _stockPrintLoadingError = Graphics.printLoadingError;
-      Graphics.printLoadingError = function (url) {
+      Graphics.printLoadingError = function (url, opts) {
+        opts = opts || {};
+        var allowRetry = opts.allowRetry !== false;
+
+        // Already decided to skip every future failure: don't even flash the
+        // overlay. The caller (stock ResourceHandler.createLoader, or the
+        // audio patch in Task 3) calls SceneManager.stop() right after this
+        // returns, so defer the resume past that same call stack, otherwise
+        // resuming here would immediately get stopped again a moment later.
+        if (isAlwaysIgnoreEnabled()) {
+          console.warn(
+            "[ignore-load-errors] auto-ignoring failed resource:",
+            url,
+          );
+          setTimeout(performIgnore, 0);
+          return;
+        }
+
         _stockPrintLoadingError.call(this, url);
         // Only when the stock method actually rendered the Retry button (guard
         // matches its own: printer present and no fatal error already showed).
         if (!this._errorPrinter || this._errorShowed) return;
+
+        if (!allowRetry) {
+          var retryBtn = this._errorPrinter.querySelector("button");
+          if (retryBtn && retryBtn.parentNode) {
+            retryBtn.parentNode.removeChild(retryBtn);
+          }
+        }
+
+        var ignoreBtn = document.createElement("button");
+        ignoreBtn.innerHTML = "Ignore";
+        ignoreBtn.style.fontSize = "24px";
+        ignoreBtn.style.color = "#ffffff";
+        ignoreBtn.style.backgroundColor = "#000000";
+        ignoreBtn.style.marginLeft = "20px";
+        ignoreBtn.onmousedown = ignoreBtn.ontouchstart = function (event) {
+          performIgnore();
+          event.stopPropagation();
+        };
+        this._errorPrinter.appendChild(ignoreBtn);
+
+        var alwaysBtn = document.createElement("button");
+        alwaysBtn.innerHTML = "Always ignore";
+        alwaysBtn.style.fontSize = "24px";
+        alwaysBtn.style.color = "#ffffff";
+        alwaysBtn.style.backgroundColor = "#000000";
+        alwaysBtn.style.marginLeft = "20px";
+        alwaysBtn.onmousedown = alwaysBtn.ontouchstart = function (event) {
+          setAlwaysIgnoreEnabled();
+          performIgnore();
+          event.stopPropagation();
+        };
+        this._errorPrinter.appendChild(alwaysBtn);
+
         var reportBtn = document.createElement("button");
         reportBtn.innerHTML = "Show report";
         reportBtn.style.fontSize = "24px";
@@ -1050,6 +1186,50 @@
       };
     }
 
+    // Track every bitmap that has given up (Bitmap.prototype._onError is the
+    // universal "this resource is not coming" signal, reached whether the
+    // <img> 'error' listener fired directly or ResourceHandler's retry-loader
+    // called resignMethod after exhausting its retry budget) so Ignore can
+    // resolve each one to a blank, valid bitmap instead of leaving it stuck
+    // in the 'error' state forever. Dedup by bitmap identity: _onLoad removes
+    // the entry if a manual Retry succeeds on its own before Ignore is used.
+    var BLANK_IMAGE_DATA_URI =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    if (
+      typeof Bitmap !== "undefined" &&
+      typeof Bitmap.prototype._onError === "function" &&
+      typeof Bitmap.prototype._onLoad === "function"
+    ) {
+      var _stockBitmapOnError = Bitmap.prototype._onError;
+      var _stockBitmapOnLoad = Bitmap.prototype._onLoad;
+
+      var removePendingBitmap = function (bitmap) {
+        var list = window.__pendingLoadFailures;
+        if (!list) return;
+        for (var i = list.length - 1; i >= 0; i--) {
+          if (list[i].target === bitmap) list.splice(i, 1);
+        }
+      };
+
+      Bitmap.prototype._onError = function () {
+        _stockBitmapOnError.call(this);
+        var bitmap = this;
+        removePendingBitmap(bitmap); // no duplicate entries on repeated failures
+        window.__pendingLoadFailures.push({
+          target: bitmap,
+          resolve: function () {
+            bitmap._requestImage(BLANK_IMAGE_DATA_URI);
+          },
+        });
+      };
+
+      Bitmap.prototype._onLoad = function () {
+        removePendingBitmap(this);
+        _stockBitmapOnLoad.call(this);
+      };
+    }
+
     // Uncap save slots; show max(50, saveCount + 5) in the save/load list.
     // Stock DRM hardcodes maxSavefiles to 30 or 50 and Window_SavefileList
     // derives its row count from it, so overriding maxSavefiles feeds both
@@ -1290,14 +1470,30 @@
             this.changePaintOpacity(true);
           }
           // Build version under the file/auto label (it no longer rides in the
-          // title). Dim, half-size, tucked on the next line.
+          // title). Dim, half-size, tucked on the next line, recolored amber
+          // with a "(!)" suffix only when the save's version is ABOVE the
+          // currently-running build AND we're in a load/continue context.
+          // Saving always re-tags a slot with the currently-running version
+          // (saves are never version-isolated), so an existing slot's old tag
+          // shown on the SAVE screen is about to be overwritten anyway, no
+          // future compatibility risk to flag there. Loading is where a save
+          // newer than the running build can actually cause problems (it's
+          // not blocked, this is a heads-up, not a gate).
           var ver = saveVersion(saveInfo);
           if (ver) {
             var prevSize = this.contents.fontSize;
             this.contents.fontSize = Math.floor(this.standardFontSize() * 0.7);
-            this.changeTextColor("#9aa0a8");
+            var curVer = currentGameVersionText();
+            var cmp = curVer ? compareVersionText(ver, curVer) : null;
+            var verLabel = ver;
+            if (this._mode !== "save" && cmp !== null && cmp > 0) {
+              this.changeTextColor("#e0a030");
+              verLabel = ver + " (!)";
+            } else {
+              this.changeTextColor("#9aa0a8");
+            }
             this.drawText(
-              ver,
+              verLabel,
               itemRect.x,
               itemRect.y + this.lineHeight() - 4,
               180,
@@ -1424,7 +1620,7 @@
     // $gameMessage, advanced the interpreter past the 401 text lines and set
     // wait mode 'message' BEFORE the save is taken. The interpreter lives in
     // $gameMap (saved), so on load it resumes in wait mode 'message' at the
-    // command after the text - but $gameMessage is reborn empty, so
+    // command after the text, but $gameMessage is reborn empty, so
     // updateWaitMode sees !isBusy(), drops the wait immediately and runs the
     // next command. The line the player was reading is skipped, exactly as if
     // they had clicked to advance.
@@ -1432,9 +1628,9 @@
     // Fix: carry $gameMessage in the save when it holds a plain text line, and
     // restore it on load. Window_Message.canStart then re-opens it on the next
     // Scene_Map and the interpreter's 'message' wait holds (isBusy() === true)
-    // until the player actually advances - resuming on the same line.
+    // until the player actually advances, resuming on the same line.
     //
-    // Scope guard - only a pure text message is carried. A pending choice /
+    // Scope guard, only a pure text message is carried. A pending choice /
     // number / item prompt keeps a bound _choiceCallback on $gameMessage that
     // JsonEx cannot serialize; restoring it without the callback would take the
     // wrong branch. Those states are unreachable from the menu anyway (the
@@ -1484,8 +1680,8 @@
     // Persist on-screen Visual-Novel busts (Irina_VisualNovelBusts) for the
     // Continue-menu preview.
     //
-    // Irina keeps bust state ONLY on transient sprite objects - no $gameSystem
-    // fields, no save hooks - and Game_Interpreter.terminate clears them at
+    // Irina keeps bust state ONLY on transient sprite objects, no $gameSystem
+    // fields, no save hooks, and Game_Interpreter.terminate clears them at
     // event end. So a *non-speaking* bust placed earlier in the conversation
     // (it persists across lines while the event runs) is nowhere in the save:
     // the snapshot reconstructs only the current line's speaking bust from

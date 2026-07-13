@@ -3,7 +3,7 @@
  *
  * Browser `zlib` for the bundled mod runtime. The tools use only the *sync*
  * one-shot zlib functions (inflateSync / inflateRawSync / deflateRawSync /
- * gunzipSync) plus zlib.crc32 - but node's `require("zlib")` resolves (via
+ * gunzipSync) plus zlib.crc32, but node's `require("zlib")` resolves (via
  * node-stdlib-browser) to `browserify-zlib`, which exists to provide the
  * streaming Gzip/Inflate Transform classes and therefore drags in
  * `readable-stream` (~82 KB) + `assert` (~71 KB) + util/string_decoder/events -

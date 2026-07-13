@@ -9,7 +9,7 @@ import android.webkit.JavascriptInterface
  * back to the main thread inside the activity.
  *
  * Only two narrow methods are exposed, both touching nothing but the local save
- * mirror - so the attack surface from the (trusted, first-party) page is minimal.
+ * mirror, so the attack surface from the (trusted, first-party) page is minimal.
  */
 class SaveBridge(
     private val store: SaveStore,

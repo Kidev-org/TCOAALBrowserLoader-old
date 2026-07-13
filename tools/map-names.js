@@ -254,7 +254,7 @@ function unbakeAssetNames(doc) {
 // empty parallaxName at an editor-only composite ("bg_<ground>_<par>", or a
 // single <ground>/<par> layer) so the editor map view shows the background. The
 // shipped game keeps parallaxName "" and draws the background from the map note
-// via the OrangeOverlay plugin - so packing back MUST clear that synthetic name,
+// via the OrangeOverlay plugin, so packing back MUST clear that synthetic name,
 // otherwise the engine requests img/parallaxes/bg_<ground>_<par> at run time and
 // 404s (the composite is never shipped).
 //

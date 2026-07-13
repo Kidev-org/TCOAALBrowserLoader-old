@@ -3,7 +3,7 @@
  *
  * Browser `stream` for the bundled mod runtime. memfs eagerly
  * require("node:stream") (via @jsonjoy.com/fs-node-builtins) only to back its
- * createReadStream / createWriteStream - which the tools never call, using
+ * createReadStream / createWriteStream, which the tools never call, using
  * exclusively the sync fs API. node-stdlib-browser would otherwise pull the full
  * `readable-stream` impl (~82 KB) plus string_decoder. The build aliases
  * stream / readable-stream / string_decoder to this module (see

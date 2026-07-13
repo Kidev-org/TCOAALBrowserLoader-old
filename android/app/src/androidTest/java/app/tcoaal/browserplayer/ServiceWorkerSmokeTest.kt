@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 /**
  * The de-risk gate. Proves, in a real Android WebView, the one thing the whole
  * BrowserPlayer architecture depends on: a page-registered service worker that
- * INTERCEPTS fetches - plus that IndexedDB writes succeed (save persistence).
+ * INTERCEPTS fetches; plus that IndexedDB writes succeed (save persistence).
  *
  * Fully hermetic: a loopback HTTP server on 127.0.0.1 (a secure context) serves
  * the fixture, so no network and no certificate are required. Run on an

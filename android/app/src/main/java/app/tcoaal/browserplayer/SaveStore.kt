@@ -5,7 +5,7 @@ import java.io.File
 /**
  * Persists a small JSON snapshot of the player's saves to the app sandbox.
  *
- * This single file - and only this file - is included in Android Auto Backup
+ * This single file, and only this file, is included in Android Auto Backup
  * (see res/xml/backup_rules.xml + data_extraction_rules.xml), so saves survive a
  * factory reset or a move to a new device. The large game-file IndexedDB (under
  * app_webview) is deliberately excluded: it exceeds the 25 MB backup cap and is

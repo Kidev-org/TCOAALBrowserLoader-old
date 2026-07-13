@@ -13,7 +13,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 /*
- * mod-runtime-worker.js - runs the heavy ModRuntime operations (createProject /
+ * mod-runtime-worker.js: runs the heavy ModRuntime operations (createProject /
  * packProject / buildShare / applyTcoaalmod) off the main thread so the modding
  * UI never goes "page unresponsive". The page talks to it via postMessage:
  *
@@ -30,7 +30,7 @@
  */
 "use strict";
 
-// Map a tool's raw stdout line to a short, generic phase label - or null to
+// Map a tool's raw stdout line to a short, generic phase label, or null to
 // drop it. The tools print precise lines (file counts, absolute paths, "Play it
 // with: node server.js <path>", "Project ready: <path>"); we must NEVER surface
 // those. Only a handful of friendly phases reach the UI; everything else (paths,

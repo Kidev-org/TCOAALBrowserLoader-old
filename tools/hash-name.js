@@ -24,7 +24,7 @@
  *
  * Note: ".k9a" is NOT part of this. It's the old pre-remaster on-disk
  * container (logical names, unhashed directory layout, real extension stored
- * in the file header) - a completely different asset layout, not a filename
+ * in the file header): a completely different asset layout, not a filename
  * variant that ever gets hashed. Under the current hashed layout the only
  * thing that goes into hashPath() is "<dir>/<name>.<realExt>" (e.g. ".png"
  * for img/*, ".ogg" for audio/*).
@@ -76,7 +76,7 @@ function parseArgs(argv) {
   return opts;
 }
 
-// If the stem already has an extension, hash it verbatim - the caller fully
+// If the stem already has an extension, hash it verbatim: the caller fully
 // specified the name (including any "[BUST]" suffix). Otherwise try it both
 // with the directory's default extension + suffix (mirrors map-names.js's
 // round-trip: name + suffix + ext) and bare (no extension at all).

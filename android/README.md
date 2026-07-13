@@ -1,10 +1,10 @@
-# TCOAAL Player - Android
+# TCOAAL Player: Android
 
 Author: kidev
 
 A thin native Android wrapper that runs https://tcoaal.app inside a `WebView`.
 Saves live in the app's private sandbox (never evicted by browser storage pressure),
-and are mirrored to a small native file that rides **Android Auto Backup** - surviving
+and are mirrored to a small native file that rides **Android Auto Backup**, surviving
 factory resets and phone migrations.
 
 ## Prerequisites
@@ -17,7 +17,7 @@ factory resets and phone migrations.
 
 The Gradle wrapper (`gradlew` + `gradle/wrapper/gradle-wrapper.jar`) is committed
 to this repo. No system Gradle installation is needed or used. If you have a system
-Gradle on `PATH`, ignore it - all commands here go through `./gradlew`.
+Gradle on `PATH`, ignore it; all commands here go through `./gradlew`.
 
 ## First-time setup
 
@@ -58,17 +58,17 @@ The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 ## Running tests
 
 ```bash
-# Unit tests - no device needed (URL policy, save-mirror file store)
+# Unit tests: no device needed (URL policy, save-mirror file store)
 ./gradlew test
 
-# Instrumented smoke test - requires a connected device or emulator
+# Instrumented smoke test: requires a connected device or emulator
 # Proves: service worker registers, intercepts a fetch, and IndexedDB persists
 # on the real WebView of the target device. Run this before shipping.
 ./gradlew connectedDebugAndroidTest
 ```
 
 The instrumented test (`ServiceWorkerSmokeTest`) is the confidence gate for the
-entire architecture - the asset-decryption pipeline depends on the WebView
+entire architecture: the asset-decryption pipeline depends on the WebView
 honouring a page-registered service worker's fetch handler. If it passes, the
 app will work on that device.
 
@@ -119,11 +119,11 @@ Requires ImageMagick 7 (`magick` command).
 
 | Threat | Plain PWA | This app |
 | ------ | --------- | -------- |
-| Storage pressure / ITP eviction | Can wipe IndexedDB | Sandbox - not evictable |
+| Storage pressure / ITP eviction | Can wipe IndexedDB | Sandbox, not evictable |
 | Clear browser data | Wipes it | Untouched (separate from Chrome) |
 | Factory reset / new phone | Lost | Restored via Auto Backup |
 
-Game assets (hundreds of MB) are excluded from Auto Backup - they exceed the
+Game assets (hundreds of MB) are excluded from Auto Backup; they exceed the
 25 MB cap and are re-importable from the user's own zip. Only `save-backup.json`
 is backed up. A `@JavascriptInterface` bridge (`AndroidSaveBridge`) handles the
 export/restore because the three IDB databases (`tcoaal`, `tcoaal-saves`,
@@ -132,14 +132,14 @@ targeted by backup rules.
 
 ### Components
 
-- `MainActivity.kt` - WebView host: service workers, external link routing, file
+- `MainActivity.kt`: WebView host: service workers, external link routing, file
   chooser for zip import, splash screen, save mirror scheduling.
-- `SaveStore.kt` - atomic read/write of `filesDir/save-backup.json`. Pure
+- `SaveStore.kt`: atomic read/write of `filesDir/save-backup.json`. Pure
   `java.io`, unit-tested.
-- `SaveBridge.kt` - `@JavascriptInterface` exposed as `window.AndroidSaveBridge`.
-- `assets/save-sync.js` - injected after each page load; exports live saves and
+- `SaveBridge.kt`: `@JavascriptInterface` exposed as `window.AndroidSaveBridge`.
+- `assets/save-sync.js`: injected after each page load; exports live saves and
   restores the backed-up snapshot into `localStorage` + `tcoaal-saves` IDB.
-- `res/xml/backup_rules.xml` + `data_extraction_rules.xml` - allowlist Auto
+- `res/xml/backup_rules.xml` + `data_extraction_rules.xml`: allowlist Auto
   Backup to `save-backup.json` only.
 
 ## Known constraints

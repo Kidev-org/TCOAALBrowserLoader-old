@@ -20,7 +20,7 @@ android {
 
     // Release signing is driven entirely by environment variables that CI sets
     // from GitHub Actions secrets. When they are absent (any local build), the
-    // release variant is left unsigned - build `debug` locally instead.
+    // release variant is left unsigned; build `debug` locally instead.
     val keystoreFile = System.getenv("KEYSTORE_FILE")
 
     signingConfigs {

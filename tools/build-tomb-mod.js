@@ -1552,8 +1552,8 @@ async function build(opts) {
 
   if (failures.length && !opts.force) {
     reportFailures(failures);
-    // Throw (not process.exit) so library callers - the in-browser/desktop mod
-    // runtime - fail loudly without writing a partial www; the CLI's main()
+    // Throw (not process.exit) so library callers (the in-browser/desktop mod
+    // runtime) fail loudly without writing a partial www; the CLI's main()
     // catch turns this back into an exit(1).
     throw new Error(
       "Aborting without writing. The base game likely does not match the " +
