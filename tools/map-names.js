@@ -107,6 +107,13 @@ function maps() {
 // in on-disk form, so the unbaker leaves it untouched.
 const HASH_RE = /^!?[0-9a-f]{16}(\[BUST\])?$/i;
 
+// Public predicate: is this asset-reference value already an on-disk hashed
+// basename (as opposed to a human-readable stem)? Used by check-mod-assets.js
+// to decide whether to look the value up verbatim or hash it first.
+function isHashLike(value) {
+  return typeof value === "string" && HASH_RE.test(value);
+}
+
 // Value transforms. Both are gated to the known name table: anything not in it
 // (a remaster-only asset still on its hash, or a name a modder freely authored)
 // passes through unchanged and still resolves at runtime via hashPath.
@@ -127,10 +134,21 @@ function toHash(dir, value) {
 // Rewrite the <ground:..> / <par:..> overlay tags inside a map note (drawn by
 // the OrangeOverlay plugin from img/parallaxes). Only the captured value is
 // transformed; the rest of the note is preserved verbatim.
+// A { kind, tag } meta object is passed as a 3rd argument so callers that
+// need it can disambiguate and quote the reference verbatim. `kind` is the
+// literal source text (the event command's full parameters array, the
+// "field: value" the value came from, or the matched note tag); not a
+// friendly label; so check-mod-assets.js can show exactly how an asset is
+// referenced. `tag` ("ground"/"par") lets it resolve a note's bare numeric
+// value: ground and par are separate name pools, and an unbaked note stores
+// just the bare number with the pool name only implied by the tag, e.g.
+// <ground:75> really means img/parallaxes/ground75.png. toName/toHash (2-arg
+// signatures) simply ignore this argument: they already recover the full
+// "ground75" stem from the hash itself.
 function transformNote(note, fn) {
   if (typeof note !== "string" || !note) return note;
   return note.replace(/<(ground|par):([^>]+)>/g, (full, tag, val) => {
-    const next = fn("img/parallaxes", val.trim());
+    const next = fn("img/parallaxes", val.trim(), { kind: full, tag });
     return next === val.trim() ? full : "<" + tag + ":" + next + ">";
   });
 }
@@ -139,23 +157,25 @@ function transformNote(note, fn) {
 // which positional parameter holds the reference and which directory it targets;
 // "audio" means the parameter is an {name,volume,pitch,pan} object.
 const COMMAND_REFS = {
-  101: [{ index: 0, dir: "img/faces" }], // Show Text (face)
-  231: [{ index: 1, dir: "img/pictures" }], // Show Picture
-  241: [{ index: 0, dir: "audio/bgm", audio: true }], // Play BGM
-  132: [{ index: 0, dir: "audio/bgm", audio: true }], // Change Battle BGM
-  140: [{ index: 1, dir: "audio/bgm", audio: true }], // Change Vehicle BGM
-  245: [{ index: 0, dir: "audio/bgs", audio: true }], // Play BGS
-  249: [{ index: 0, dir: "audio/me", audio: true }], // Play ME
-  133: [{ index: 0, dir: "audio/me", audio: true }], // Change Victory ME
-  139: [{ index: 0, dir: "audio/me", audio: true }], // Change Defeat ME
-  250: [{ index: 0, dir: "audio/se", audio: true }], // Play SE
-  284: [{ index: 0, dir: "img/parallaxes" }], // Change Parallax
+  101: [{ index: 0, dir: "img/faces", param: "faceName" }],
+  231: [{ index: 1, dir: "img/pictures", param: "pictureName" }],
+  241: [{ index: 0, dir: "audio/bgm", audio: true, param: "bgm" }],
+  132: [{ index: 0, dir: "audio/bgm", audio: true, param: "bgm" }],
+  140: [{ index: 1, dir: "audio/bgm", audio: true, param: "bgm" }],
+  245: [{ index: 0, dir: "audio/bgs", audio: true, param: "bgs" }],
+  249: [{ index: 0, dir: "audio/me", audio: true, param: "me" }],
+  133: [{ index: 0, dir: "audio/me", audio: true, param: "me" }],
+  139: [{ index: 0, dir: "audio/me", audio: true, param: "me" }],
+  250: [{ index: 0, dir: "audio/se", audio: true, param: "se" }],
+  284: [{ index: 0, dir: "img/parallaxes", param: "parallaxName" }],
+  // Game_Interpreter.command322: actor.setCharacterImage(params[1], params[2])
+  // then actor.setFaceImage(params[3], params[4]); index 1 is the character
+  // sprite, index 3 is the face.
   322: [
-    // Change Actor Images
-    { index: 1, dir: "img/faces" },
-    { index: 3, dir: "img/characters" },
+    { index: 1, dir: "img/characters", param: "characterName" },
+    { index: 3, dir: "img/faces", param: "faceName" },
   ],
-  323: [{ index: 1, dir: "img/characters" }], // Change Vehicle Image
+  323: [{ index: 1, dir: "img/characters", param: "characterName" }],
 };
 
 // Object property names whose value is an asset reference, by directory.
@@ -205,12 +225,17 @@ function transformDoc(doc, fn) {
     if (typeof node.code === "number" && Array.isArray(node.parameters)) {
       const specs = COMMAND_REFS[node.code];
       if (specs) {
+        // The literal parameters array, exactly as it appears in the Map
+        // file; not a friendly label; so a caller can show the reference
+        // verbatim (e.g. check-mod-assets.js's weird-format report).
+        const raw = JSON.stringify(node.parameters);
         for (const s of specs) {
           const p = node.parameters[s.index];
+          const meta = { kind: raw };
           if (s.audio) {
-            if (isAudio(p)) p.name = fn(s.dir, p.name);
+            if (isAudio(p)) p.name = fn(s.dir, p.name, meta);
           } else if (typeof p === "string") {
-            node.parameters[s.index] = fn(s.dir, p);
+            node.parameters[s.index] = fn(s.dir, p, meta);
           }
         }
       }
@@ -218,21 +243,25 @@ function transformDoc(doc, fn) {
 
     for (const field of Object.keys(IMAGE_FIELDS)) {
       if (typeof node[field] === "string") {
-        node[field] = fn(IMAGE_FIELDS[field], node[field]);
+        const raw = `${field}: ${JSON.stringify(node[field])}`;
+        node[field] = fn(IMAGE_FIELDS[field], node[field], { kind: raw });
       }
     }
     for (const field of Object.keys(AUDIO_FIELDS)) {
       if (isAudio(node[field])) {
-        node[field].name = fn(AUDIO_FIELDS[field], node[field].name);
+        const raw = `${field}: ${JSON.stringify(node[field])}`;
+        node[field].name = fn(AUDIO_FIELDS[field], node[field].name, { kind: raw });
       }
     }
     if (Array.isArray(node.sounds)) {
-      for (const s of node.sounds)
-        if (isAudio(s)) s.name = fn("audio/se", s.name);
+      for (const s of node.sounds) {
+        if (isAudio(s)) s.name = fn("audio/se", s.name, { kind: `sounds: ${JSON.stringify(s)}` });
+      }
     }
     if (Array.isArray(node.tilesetNames)) {
+      const raw = `tilesetNames: ${JSON.stringify(node.tilesetNames)}`;
       node.tilesetNames = node.tilesetNames.map((n) =>
-        typeof n === "string" ? fn("img/tilesets", n) : n,
+        typeof n === "string" ? fn("img/tilesets", n, { kind: raw }) : n,
       );
     }
     if (typeof node.note === "string") node.note = transformNote(node.note, fn);
@@ -435,6 +464,8 @@ module.exports = {
   dirSuffix,
   toName,
   toHash,
+  isHashLike,
+  transformDoc,
   bakeAssetNames,
   unbakeAssetNames,
   unbakeMapBackground,

@@ -782,7 +782,7 @@ async function run(opts) {
 
 // Importable as a library (the browser bundle and share-project call run()
 // in-process). Only auto-run + own the process when invoked directly as a CLI.
-module.exports = { run, parseArgs, resolveWww, extract, buildNameMap };
+module.exports = { run, parseArgs, resolveWww, extract, buildNameMap, STD_DATA };
 
 if (require.main === module) {
   run(parseArgs(process.argv.slice(2))).catch((e) => {
