@@ -6742,11 +6742,13 @@
       var iconY = rect.y + pad;
 
       // While this mod is downloading, the row doubles as its own progress
-      // bar: a translucent accent fills left-to-right in proportion to the
-      // install percentage, with a brighter baseline so it reads clearly even
-      // under the text. _percentShown is eased toward the real _percent by the
-      // list window's update loop, so the fill glides smoothly between the
-      // coarse steps installMod reports. Drawn first, under the icon and text.
+      // bar: a blue accent fills left-to-right in proportion to the install
+      // percentage, slowly taking over the grey "not installed" base painted
+      // underneath (drawItem) so the filled part reads blue and the rest stays
+      // grey. A brighter baseline keeps it legible under the text.
+      // _percentShown is eased toward the real _percent by the list window's
+      // update loop, so the fill glides smoothly between the coarse steps
+      // installMod reports. Drawn under the icon and text.
       var dlSt = _modStatus[mod.key];
       if (dlSt && dlSt._downloading) {
         var pctRaw =
@@ -6756,17 +6758,24 @@
               ? dlSt._percent
               : 0;
         var pct = Math.max(0, Math.min(100, pctRaw));
-        var fillW = Math.floor((rect.width * pct) / 100);
+        // Span the full row width, not the text-inset rect: the grey base is
+        // painted across the whole itemRect, so starting the fill at rect.x
+        // (inset by textPadding) would leave a thin grey strip clinging to the
+        // far-left edge. Outset by textPadding to line the two up exactly.
+        var tp = win.textPadding ? win.textPadding() : 0;
+        var rowX = rect.x - tp;
+        var rowW = rect.width + tp * 2;
+        var fillW = Math.floor((rowW * pct) / 100);
         if (fillW > 0) {
           win.contents.fillRect(
-            rect.x,
+            rowX,
             rect.y,
             fillW,
             rect.height,
-            "rgba(120,210,255,0.13)",
+            "rgba(120,210,255,0.24)",
           );
           win.contents.fillRect(
-            rect.x,
+            rowX,
             rect.y + rect.height - 3,
             fillW,
             3,
@@ -7240,6 +7249,26 @@
       var isActive = isPluginType(mod.type)
         ? isPluginActive(mod.key)
         : getActiveMod() === mod.key;
+
+      // Not-installed mods/plugins get a muted grey wash so the list visually
+      // separates "ready to use" rows from ones that still need downloading.
+      // Built-in plugins ship with the app (always available, never "not
+      // installed") so they never get the wash. A row that is mid-download is
+      // still "not installed", so it keeps the grey base too -- the blue
+      // progress fill (drawn on top in drawModRow) then slowly takes it over
+      // as the install advances.
+      var st = _modStatus[mod.key];
+      var isInstalled = st && st.installed;
+      if (!isInstalled && !isBuiltIn(mod)) {
+        var wash = this.itemRect(index);
+        this.contents.fillRect(
+          wash.x,
+          wash.y,
+          wash.width,
+          wash.height,
+          "rgba(128,128,140,0.16)",
+        );
+      }
 
       // Active plugins get a green border in the list (overhaul/translation
       // active are already hoisted out into Window_ModActive, so they never
