@@ -6,7 +6,7 @@
     "type": "built-in plugin",
     "description": "Enables mouse and touch input for menus and gameplay",
     "author": "kidev",
-    "version": "e08d63d",
+    "version": "852097c",
     "files": [
       "img/icon.png",
       "js/plugins/MouseControl.js"
@@ -19,7 +19,7 @@
     "type": "built-in plugin",
     "description": "On-screen controller: a D-pad on the left and four action buttons on the right",
     "author": "kidev",
-    "version": "e08d63d",
+    "version": "852097c",
     "files": [
       "img/icon.png",
       "js/plugins/VirtualController.js"
@@ -32,7 +32,7 @@
     "type": "built-in plugin",
     "description": "Keeps the player centered and turns door transfers into a smooth pan into the next map",
     "author": "kidev",
-    "version": "e08d63d",
+    "version": "852097c",
     "requiresBaseGame": false,
     "files": [
       "img/icon.png",
@@ -46,7 +46,7 @@
     "type": "built-in plugin",
     "description": "While enabled, the vision room, visions and stars are all available",
     "author": "kidev",
-    "version": "e08d63d",
+    "version": "852097c",
     "requiresBaseGame": true,
     "files": [
       "img/icon.png",
@@ -60,7 +60,7 @@
     "type": "built-in plugin",
     "description": "Changes party character movement to dot movement that does not depend on tiles",
     "author": "Sanshiro",
-    "version": "e08d63d",
+    "version": "852097c",
     "lastUpdate": "2024-03-29",
     "files": [
       "img/icon.png",
@@ -75,7 +75,7 @@
     "type": "built-in plugin",
     "description": "Add a message backlog function to the game's message system (shortcut: TAB)",
     "author": "Yanfly",
-    "version": "e08d63d",
+    "version": "852097c",
     "lastUpdate": "2024-03-29",
     "files": [
       "img/icon.png",
@@ -87,13 +87,12 @@
     "name": "The Coffin of Andrew and Renee",
     "icon": "mods/TCOAAR/www/img/titles1/Book.png",
     "author": "Graveyard Shift",
-    "lastUpdate": "2026-07-11",
-    "repo": "https://github.com/graveyardshiftpd/tcoaar-project",
+    "lastUpdate": "2026-07-16",
     "path": "mods/TCOAAR",
     "type": "overhaul",
     "description": "A retelling of the original story in an alternate universe where one aspect of their childhood was changed",
     "langFile": "languages/english/dialogue.loc",
-    "version": "e08d63d",
+    "version": "852097c",
     "files": [
       "Copyrights - Coffin of Andy and Leyley.txt",
       "Credits and Licenses.txt",
@@ -115,11 +114,14 @@
       "audio/bgm/teddybear.ogg",
       "audio/bgm/ticktock.ogg",
       "audio/se/Car engine start sound effect.ogg",
-      "audio/se/GlaSS CRACK 2.ogg",
+      "audio/se/Door3.ogg",
       "audio/se/Glass crack 1.ogg",
+      "audio/se/Glass crack 2.ogg",
       "audio/se/Glass crack 3.ogg",
       "audio/se/Open3.ogg",
       "audio/se/Wind5_unused.ogg",
+      "audio/se/phone_tone.ogg",
+      "audio/se/schoolbell.ogg",
       "audio/se/shatter.ogg",
       "audio/se/shower.ogg",
       "audio/se/sizzle.ogg",
@@ -276,6 +278,7 @@
       "img/characters/Actor5.png",
       "img/characters/Actor6.png",
       "img/characters/Actor8.png",
+      "img/characters/Actor9.png",
       "img/characters/Coffee_Table.png",
       "img/characters/actor7.png",
       "img/characters/bACKYARD_GATE_DOOR.png",
@@ -385,6 +388,15 @@
       "img/faces/bk_tch[BUST].png",
       "img/faces/bk_ticked[BUST].png",
       "img/faces/bk_unsure[BUST].png",
+      "img/faces/bt_awkward[BUST].png",
+      "img/faces/bt_cringe[BUST].png",
+      "img/faces/bt_ew[BUST].png",
+      "img/faces/bt_flustered[BUST].png",
+      "img/faces/bt_hmph[BUST].png",
+      "img/faces/bt_meh[BUST].png",
+      "img/faces/bt_normal[BUST].png",
+      "img/faces/bt_waver[BUST].png",
+      "img/faces/bt_worry[BUST].png",
       "img/faces/d_HolyShit_BUST.png",
       "img/faces/d_LookingAwayBUST.png",
       "img/faces/d_ShockedBUST.png",
@@ -446,6 +458,11 @@
       "img/faces/hw_smile[BUST].png",
       "img/faces/hw_surprise[BUST].png",
       "img/faces/hw_unsure[BUST].png",
+      "img/faces/j_aw[BUST].png",
+      "img/faces/j_cry[BUST].png",
+      "img/faces/j_letsgo[BUST].png",
+      "img/faces/j_pained[BUST].png",
+      "img/faces/j_regret[BUST].png",
       "img/faces/m_TalkUneasyFeeling[BUST].png",
       "img/faces/m_Uneasy[BUST].png",
       "img/faces/m_Welll[BUST].png",
@@ -618,6 +635,8 @@
       "img/faces/sk_sure[BUST].png",
       "img/faces/sk_surprise[BUST].png",
       "img/faces/sk_teary[BUST].png",
+      "img/faces/skp_hmph[BUST].png",
+      "img/faces/skp_neutral[BUST].png",
       "img/parallaxes/Julias_Bedroom_par_layer.png",
       "img/parallaxes/Julias_house_floor_1_section_1.png",
       "img/parallaxes/duobed.png",
@@ -701,6 +720,7 @@
       "img/parallaxes/par78.png",
       "img/parallaxes/par79.png",
       "img/parallaxes/par80.png",
+      "img/parallaxes/par83.png",
       "img/parallaxes/par84.png",
       "img/parallaxes/par84_douglas.png",
       "img/parallaxes/par84_douglas_and_renee.png",
@@ -1934,7 +1954,7 @@
       "mods/The coffin of Andy and July/mod.json",
       "package.json"
     ],
-    "version": "e08d63d",
+    "version": "852097c",
     "drmType": "none"
   },
   "TCOAALili": {
@@ -2995,7 +3015,7 @@
       "languages/english/dialogue.loc",
       "package.json"
     ],
-    "version": "e08d63d",
+    "version": "852097c",
     "drmType": "direct"
   },
   "TLCOAAA": {
@@ -3776,7 +3796,7 @@
       "js/rpg_windows.js",
       "package.json"
     ],
-    "version": "e08d63d",
+    "version": "852097c",
     "drmType": "direct"
   },
   "TDOAAL": {
@@ -3787,7 +3807,7 @@
     "description": "Adds voice acting to Chapter 1 (FenrirtheWulf, iamyourmagician, Adoxographist, PatchumiVT, Shami, WesternShadow, Zombi)",
     "lastUpdate": "2025-09-15",
     "author": "6ExtraOrdinary9",
-    "version": "e08d63d",
+    "version": "852097c",
     "files": [
       "audio/bgm/Sexy Raidish/1/Voice/A1",
       "audio/bgm/Sexy Raidish/1/Voice/A10",
