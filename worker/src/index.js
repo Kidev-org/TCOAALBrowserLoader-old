@@ -96,8 +96,17 @@ function isForeignOrigin(request) {
   return origin !== null && origin !== ALLOWED_ORIGIN;
 }
 
+/**
+ * Canonical Cache API key for GET /api/dl: a bare GET on this path, query
+ * string dropped. Both the read (allCounts) and the write's invalidation
+ * (countInstall) must build it the same way or the delete misses the entry.
+ */
+function countsCacheKey(url) {
+  return new Request(url.origin + "/api/dl", { method: "GET" });
+}
+
 /** POST /api/dl/{modId} */
-async function countInstall(modId, env, now, request) {
+async function countInstall(modId, env, now, request, ctx) {
   let types;
   try {
     types = await modTypes(now);
@@ -140,12 +149,20 @@ async function countInstall(modId, env, now, request) {
     .bind(modId, new Date(now).toISOString())
     .run();
 
+  // Drop the edge-cached GET so the next read rebuilds it from D1. Without this
+  // the write stays hidden for up to COUNTS_TTL_S: a user installs a mod, opens
+  // the Mods menu, and is served the pre-install snapshot -- the count looks
+  // broken. Cache.delete is per-colo, which covers the common "install then
+  // look" loop from one place; other colos age out on their own TTL.
+  ctx.waitUntil(caches.default.delete(countsCacheKey(new URL(request.url))));
+
   return new Response(null, { status: 204 });
 }
 
 /** GET (or HEAD) /api/dl */
 async function allCounts(url, env, ctx) {
-  // Canonical key: a bare GET for this path, query string dropped.
+  // Canonical key (countsCacheKey): a bare GET for this path, query string
+  // dropped.
   //
   // Keying on the live request would fold in its method and headers, so a HEAD
   // probe would miss the entry a GET populated (and Cache API rejects a put()
@@ -154,7 +171,7 @@ async function allCounts(url, env, ctx) {
   // key, missing the cache and hitting D1 every time. Dropping it means every
   // spelling of this URL shares one cached response.
   const cache = caches.default;
-  const key = new Request(url.origin + url.pathname, { method: "GET" });
+  const key = countsCacheKey(url);
   const hit = await cache.match(key);
   if (hit) return hit;
 
@@ -198,7 +215,7 @@ export default {
       if (isForeignOrigin(request)) {
         return new Response("Forbidden origin", { status: 403 });
       }
-      return countInstall(m[1], env, now, request);
+      return countInstall(m[1], env, now, request, ctx);
     }
 
     return new Response("Not found", { status: 404 });
