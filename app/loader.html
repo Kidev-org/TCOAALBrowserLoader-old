@@ -7721,9 +7721,11 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
 
       const APP_UPDATE_REPO = "Kidev/TCOAALBrowserLoader";
       const APP_UPDATE_TAG_PREFIX = "android/v";
-      const APP_UPDATE_CHECK_KEY = "__android_update_check__";
       const APP_UPDATE_LATEST_KEY = "__android_update_latest__";
-      const APP_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+      // Last release version we auto-opened the dialog for. Gates the popup to
+      // once per new release (instead of the old once-per-day timer, which
+      // suppressed the fetch entirely and left the badge on a stale version).
+      const APP_UPDATE_PROMPTED_KEY = "__android_update_prompted__";
 
       // Last known newer release ({version, url}), or null when up to date. Set
       // by applyAppUpdateState(); read by the badge / dialog.
@@ -7749,7 +7751,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         }
         if (current === "0") {
           frag.appendChild(text("You are on "));
-          frag.appendChild(strong("an old version prior to v1.4.0"));
+          frag.appendChild(strong("an old version"));
           frag.appendChild(text(". Download "));
           frag.appendChild(strong("v" + latestVersion));
           frag.appendChild(text(" right now."));
@@ -7851,41 +7853,47 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         if (!/TCOAALApp\//.test(navigator.userAgent)) return;
 
         // Surface the badge immediately from the last known release, so an
-        // available update shows every launch even offline / when throttled.
+        // available update shows every launch even offline.
         try {
           const cachedRaw = localStorage.getItem(APP_UPDATE_LATEST_KEY);
           if (cachedRaw) applyAppUpdateState(JSON.parse(cachedRaw));
         } catch (e) {}
 
-        // Hit the network at most once per day. A failed check leaves the
-        // stored timestamp untouched so it retries on the next launch; the
-        // badge stays up from the cache meanwhile.
-        try {
-          const last = parseInt(
-            localStorage.getItem(APP_UPDATE_CHECK_KEY) || "0",
-            10,
-          );
-          if (last && Date.now() - last < APP_UPDATE_INTERVAL_MS) return;
-        } catch (e) {}
-
+        // Always check on launch. A single GitHub API call per launch is well
+        // within rate limits, and failures fall back silently to the cached
+        // badge above. This must NOT be gated behind a once-per-day timer: that
+        // made a freshly published release invisible for up to 24h and left the
+        // badge/dialog pointing at the stale cached version (e.g. still offering
+        // v1.4.0 after v1.5.0 shipped).
         let latest;
         try {
           latest = await fetchLatestAndroidRelease();
         } catch (e) {
-          // Offline / rate-limited / CORS: stay silent, retry next launch.
+          // Offline / rate-limited / CORS: stay silent, keep the cached badge.
           return;
         }
         if (!latest) return;
 
         try {
-          localStorage.setItem(APP_UPDATE_CHECK_KEY, String(Date.now()));
           localStorage.setItem(APP_UPDATE_LATEST_KEY, JSON.stringify(latest));
         } catch (e) {}
 
-        // Refresh the badge from the fresh result and, when a newer release is
-        // out, auto-open the dialog (at most once per day, gated by the
-        // throttle above).
-        if (applyAppUpdateState(latest)) showAppUpdateDialog();
+        // Refresh the badge from the fresh result. Auto-open the dialog only the
+        // first time we see a given newer version, so the user is nudged once
+        // per release rather than on every launch; the badge stays available to
+        // reopen it manually.
+        if (applyAppUpdateState(latest)) {
+          let prompted = "";
+          try {
+            prompted = localStorage.getItem(APP_UPDATE_PROMPTED_KEY) || "";
+          } catch (e) {}
+          if (prompted !== latest.version) {
+            try {
+              localStorage.setItem(APP_UPDATE_PROMPTED_KEY, latest.version);
+            } catch (e) {}
+            showAppUpdateDialog();
+          }
+        }
       }
 
       // Step 2, share route. Called straight from the button's click handler:
