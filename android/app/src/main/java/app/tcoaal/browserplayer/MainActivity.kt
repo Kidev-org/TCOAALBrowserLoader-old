@@ -97,7 +97,11 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(ExportBridge(this), "AndroidExportBridge")
 
         webView.settings.apply {
-            userAgentString = "$userAgentString TCOAALApp/1"
+            // TCOAALApp/1 is the stable, version-agnostic in-app marker matched by
+            // the web loader and lang-shim; TCOAALVer/<versionName> carries the real
+            // installed version so the loader can offer an update when a newer APK
+            // has been released. Read from PackageManager (no BuildConfig needed).
+            userAgentString = "$userAgentString TCOAALApp/1 TCOAALVer/$appVersionName"
             javaScriptEnabled = true
             domStorageEnabled = true
             @Suppress("DEPRECATION")
@@ -148,6 +152,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Installed app version (from the package), e.g. "1.2.0". Falls back to "1"
+     *  when it cannot be read, so the loader still sees a well-formed token. */
+    private val appVersionName: String
+        get() = try {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1"
+        } catch (e: Exception) {
+            "1"
+        }
 
     /** The asset-decryption pipeline relies on a service worker; make sure the
      *  WebView's SW engine is active and may read app content. */

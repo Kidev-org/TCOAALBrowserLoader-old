@@ -1519,6 +1519,12 @@
         font-size: clamp(13px, 1.15vmin, 16px);
         padding: clamp(7px, 0.7vw, 12px) clamp(12px, 1.4vw, 20px);
       }
+      /* An <a> styled as a button (the app-update download link) must drop the
+         default underline so it matches the sibling <button>s. */
+      a.action-btn {
+        text-decoration: none;
+        display: inline-block;
+      }
 
       /* Off-screen content for SEO / screen readers. Kept out of the visual
          layout but fully crawlable. */
@@ -2523,6 +2529,44 @@
             onclick="hideFeedbackDialog()"
           >
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Android app self-update prompt. Body-level (same reasoning as the
+         feedback dialog: it must survive the modding/report views that hide
+         .overlay). Only ever shown inside the Android WebView; see
+         checkAndroidAppUpdate() at the foot of <body>. -->
+    <div class="confirm-dialog" id="app-update-dialog">
+      <div class="confirm-dialog-content">
+        <h2>Update available</h2>
+        <p>
+          A newer version of the app is available.
+          You are on <strong id="app-update-current"></strong>;
+          <strong id="app-update-latest"></strong> can be downloaded now.
+        </p>
+        <p class="confirm-saves-msg">
+          The download opens in your browser. Install it over your current
+          app to update. Your saves and imported game are kept.
+        </p>
+        <div class="confirm-actions">
+          <a
+            class="action-btn success"
+            id="btn-app-update-download"
+            href="#"
+            target="_blank"
+            rel="noopener"
+            onclick="hideAppUpdateDialog()"
+          >
+            Download update
+          </a>
+          <button
+            class="action-btn secondary"
+            id="btn-app-update-later"
+            onclick="hideAppUpdateDialog()"
+          >
+            Later
           </button>
         </div>
       </div>
@@ -7575,6 +7619,115 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         if ($d) $d.classList.remove("visible");
       }
 
+      // Android app self-update
+      //
+      // Inside the Android WebView the UA carries "TCOAALVer/<installed version>"
+      // (see MainActivity.kt). Compare it against the newest published Android
+      // release and, when a newer APK exists, offer a direct download. The web
+      // and desktop loaders auto-update from the hosted page, so this runs in
+      // the app only. Checked at most once per day; every failure mode is
+      // silent (no popup, no error) so a bad network never disrupts launch.
+
+      const APP_UPDATE_REPO = "Kidev/TCOAALBrowserLoader";
+      const APP_UPDATE_TAG_PREFIX = "android/v";
+      const APP_UPDATE_CHECK_KEY = "__android_update_check__";
+      const APP_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+      function hideAppUpdateDialog() {
+        const $d = document.getElementById("app-update-dialog");
+        if ($d) $d.classList.remove("visible");
+      }
+
+      // Numeric-dotted compare: >0 when a is newer than b, <0 older, 0 equal.
+      // Non-numeric or missing segments count as 0, so "1" < "1.2.0".
+      function compareAppVersions(a, b) {
+        const pa = String(a || "").split(".");
+        const pb = String(b || "").split(".");
+        const n = Math.max(pa.length, pb.length);
+        for (let i = 0; i < n; i++) {
+          const na = parseInt(pa[i], 10) || 0;
+          const nb = parseInt(pb[i], 10) || 0;
+          if (na !== nb) return na - nb;
+        }
+        return 0;
+      }
+
+      function currentAppVersion() {
+        const m = /TCOAALVer\/([0-9][0-9A-Za-z.\-]*)/.exec(navigator.userAgent);
+        // No token => an old build predating version reporting; treat as "0"
+        // so it is always considered outdated and gets nudged to update.
+        return m ? m[1] : "0";
+      }
+
+      // Newest Android release + its .apk download URL, or null if none/failed.
+      async function fetchLatestAndroidRelease() {
+        const resp = await fetch(
+          "https://api.github.com/repos/" +
+            APP_UPDATE_REPO +
+            "/releases?per_page=30",
+          { headers: { Accept: "application/vnd.github+json" } },
+        );
+        if (!resp.ok) return null;
+        const releases = await resp.json();
+        if (!Array.isArray(releases)) return null;
+        // The repo publishes both android/v* and desktop/v* releases; the API
+        // returns them newest-first, so the first android/v* entry is latest.
+        for (const rel of releases) {
+          if (!rel || rel.draft || rel.prerelease) continue;
+          const tag = rel.tag_name || "";
+          if (tag.indexOf(APP_UPDATE_TAG_PREFIX) !== 0) continue;
+          const version = tag.slice(APP_UPDATE_TAG_PREFIX.length);
+          if (!version) continue;
+          const assets = Array.isArray(rel.assets) ? rel.assets : [];
+          const apk = assets.find(function (a) {
+            return a && /\.apk$/i.test(a.name || "");
+          });
+          if (!apk || !apk.browser_download_url) continue;
+          return { version: version, url: apk.browser_download_url };
+        }
+        return null;
+      }
+
+      async function checkAndroidAppUpdate() {
+        if (!/TCOAALApp\//.test(navigator.userAgent)) return;
+
+        // Throttle to one successful check per day. A failed check leaves the
+        // stored timestamp untouched so it retries on the next launch.
+        try {
+          const last = parseInt(
+            localStorage.getItem(APP_UPDATE_CHECK_KEY) || "0",
+            10,
+          );
+          if (last && Date.now() - last < APP_UPDATE_INTERVAL_MS) return;
+        } catch (e) {}
+
+        let latest;
+        try {
+          latest = await fetchLatestAndroidRelease();
+        } catch (e) {
+          // Offline / rate-limited / CORS: stay silent, retry next launch.
+          return;
+        }
+        if (!latest) return;
+
+        try {
+          localStorage.setItem(APP_UPDATE_CHECK_KEY, String(Date.now()));
+        } catch (e) {}
+
+        const current = currentAppVersion();
+        if (compareAppVersions(latest.version, current) <= 0) return;
+
+        const $current = document.getElementById("app-update-current");
+        const $latest = document.getElementById("app-update-latest");
+        const $download = document.getElementById("btn-app-update-download");
+        const $dialog = document.getElementById("app-update-dialog");
+        if (!$dialog || !$download) return;
+        if ($current) $current.textContent = "v" + current;
+        if ($latest) $latest.textContent = "v" + latest.version;
+        $download.setAttribute("href", latest.url);
+        $dialog.classList.add("visible");
+      }
+
       // Step 2, share route. Called straight from the button's click handler:
       // nothing is awaited before navigator.share(), so the transient user
       // activation share() demands is still live. This is the entire reason the
@@ -7868,6 +8021,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         // parse, per Step 1's check that none of them are deferred/async).
         await refreshVersionsForPlay();
         await refreshHealthcheck();
+
+        // Fire-and-forget: never let the update check block or break the loader.
+        checkAndroidAppUpdate().catch(function () {});
       })();
 
       // Diagnostic report (#report route).
