@@ -757,11 +757,11 @@
       }
 
       /* ----- Import split: the two entry buttons (folder / .zip) fused into a
-         single control. Left is the app's green (--green), right its purple
-         (--purple) -- the same two theme accents used across this loader, read
-         here as Andrew / Ashley, not sampled from the game files. At rest the
-         control is ONE horizontal gradient: solid green, a quick blend across
-         the middle, solid purple -- no hard seam. Hovering a side fades in its
+         single control. Left is the app's purple (--purple), right its green
+         (--green) -- the same two theme accents used across this loader, read
+         here as Ashley / Andrew, not sampled from the game files. At rest the
+         control is ONE horizontal gradient: solid purple, a quick blend across
+         the middle, solid green -- no hard seam. Hovering a side fades in its
          solid colour and sweeps it across a straight midline to take the whole
          control, gliding its label to centre while the other side is covered
          underneath; leaving reverses it back to the gradient. Glows on hover
@@ -791,15 +791,15 @@
         isolation: isolate;
         box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.28);
         transition: box-shadow 0.3s ease;
-        /* Rest look: one diagonal gradient -- solid green, a quick green->
-           purple blend across a leaning midline, solid purple. Halves sit atop
+        /* Rest look: one diagonal gradient -- solid purple, a quick purple->
+           green blend across a leaning midline, solid green. Halves sit atop
            transparent, so this shows through until one is hovered. */
         background: linear-gradient(
           117deg,
-          var(--green) 0,
-          var(--green) 46%,
-          var(--purple) 54%,
-          var(--purple) 100%
+          var(--purple) 0,
+          var(--purple) 46%,
+          var(--green) 54%,
+          var(--green) 100%
         );
       }
       .import-half {
@@ -867,11 +867,11 @@
       }
       .import-half.left:hover,
       .import-half.left:focus-visible {
-        background: var(--green);
+        background: var(--purple);
       }
       .import-half.right:hover,
       .import-half.right:focus-visible {
-        background: var(--purple);
+        background: var(--green);
       }
       .import-half:focus-visible {
         outline: 2px solid var(--white);
@@ -883,13 +883,13 @@
       .import-split:has(.import-half.left:hover),
       .import-split:has(.import-half.left:focus-visible) {
         box-shadow:
-          0 0 20px rgba(134, 211, 122, 0.6),
+          0 0 20px rgba(236, 131, 195, 0.6),
           inset 0 0 18px rgba(0, 0, 0, 0.28);
       }
       .import-split:has(.import-half.right:hover),
       .import-split:has(.import-half.right:focus-visible) {
         box-shadow:
-          0 0 20px rgba(236, 131, 195, 0.6),
+          0 0 20px rgba(134, 211, 122, 0.6),
           inset 0 0 18px rgba(0, 0, 0, 0.28);
       }
       .import-half:disabled {
@@ -901,9 +901,9 @@
       }
       /* Android has no folder picker, so the left half is removed elsewhere
          (body.android-app #btn-load). The surviving .zip half fills the control
-         over a flat purple background, reading as one plain button. */
+         over a flat green background, reading as one plain button. */
       body.android-app .import-split {
-        background: var(--purple);
+        background: var(--green);
       }
       body.android-app .import-half.right {
         clip-path: none;
@@ -1526,6 +1526,38 @@
         display: inline-block;
       }
 
+      /* Persistent "Update available" chip. Hidden until the Android update
+         check flags a newer release (body.has-app-update); app-only, top-right,
+         where the mobile bottom link bar leaves the corner clear. */
+      #app-update-badge {
+        display: none;
+      }
+      body.android-app.has-app-update #app-update-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        position: fixed;
+        top: calc(8px + env(safe-area-inset-top, 0px));
+        right: calc(10px + env(safe-area-inset-right, 0px));
+        z-index: 40;
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--green);
+        background: rgba(15, 15, 15, 0.9);
+        color: var(--green);
+        font-family: "Georgia", serif;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+      }
+      #app-update-badge svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+        flex: 0 0 auto;
+      }
+
       /* Off-screen content for SEO / screen readers. Kept out of the visual
          layout but fully crawlable. */
       .sr-only {
@@ -1899,6 +1931,33 @@
       .android-only { display: none; }
       body.android-app .android-only { display: inline; }
       body.android-app .android-hide { display: none !important; }
+
+      /* Android: trim the import instructions a touch so the fresh-import panel
+         is shorter and the background art (Kit9) is not shoved out of frame. */
+      body.android-app #info-fresh .info {
+        font-size: clamp(13px, 1.7vmin, 18px);
+        line-height: 1.45;
+      }
+
+      /* Android portrait: keep the screen's horizontal centre clear for the
+         system navigation gesture / button. Drop the GitHub chip and split the
+         four remaining icons into two edge-hugging pairs (tool + feedback on the
+         left, steam + donate on the right), with a safe margin from the rounded
+         phone corners. */
+      @media (orientation: portrait) {
+        body.android-app .top-links {
+          padding-left: max(16px, env(safe-area-inset-left, 0px));
+          padding-right: max(16px, env(safe-area-inset-right, 0px));
+        }
+        body.android-app .top-links .github-link {
+          display: none !important;
+        }
+        /* margin-right:auto on the last item of the left pair absorbs the free
+           space, pushing steam + donate to the right edge. */
+        body.android-app .top-links .feedback-link {
+          margin-right: auto;
+        }
+      }
     </style>
   </head>
   <body>
@@ -2534,6 +2593,22 @@
       </div>
     </div>
 
+    <!-- Persistent "Update available" chip, top-right. Shown (mobile/app only)
+         whenever a newer Android release is known, so the user can reopen the
+         update dialog at any time. The bottom link bar clears the top-right
+         corner on mobile, so this never overlaps the icons. -->
+    <button
+      type="button"
+      id="app-update-badge"
+      onclick="showAppUpdateDialog(); event.stopPropagation()"
+      aria-label="Update available"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/>
+      </svg>
+      <span>Update available</span>
+    </button>
+
     <!-- Android app self-update prompt. Body-level (same reasoning as the
          feedback dialog: it must survive the modding/report views that hide
          .overlay). Only ever shown inside the Android WebView; see
@@ -2541,11 +2616,7 @@
     <div class="confirm-dialog" id="app-update-dialog">
       <div class="confirm-dialog-content">
         <h2>Update available</h2>
-        <p>
-          A newer version of the app is available.
-          You are on <strong id="app-update-current"></strong>;
-          <strong id="app-update-latest"></strong> can be downloaded now.
-        </p>
+        <p id="app-update-msg"></p>
         <p class="confirm-saves-msg">
           The download opens in your browser. Install it over your current
           app to update. Your saves and imported game are kept.
@@ -7631,11 +7702,77 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       const APP_UPDATE_REPO = "Kidev/TCOAALBrowserLoader";
       const APP_UPDATE_TAG_PREFIX = "android/v";
       const APP_UPDATE_CHECK_KEY = "__android_update_check__";
+      const APP_UPDATE_LATEST_KEY = "__android_update_latest__";
       const APP_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+      // Last known newer release ({version, url}), or null when up to date. Set
+      // by applyAppUpdateState(); read by the badge / dialog.
+      let _appUpdateInfo = null;
 
       function hideAppUpdateDialog() {
         const $d = document.getElementById("app-update-dialog");
         if ($d) $d.classList.remove("visible");
+      }
+
+      // Build the dialog sentence as DOM nodes (versions go in <strong> without
+      // ever touching innerHTML). current === "0" means the running build is old
+      // enough that it never reported a version, so name the target instead.
+      function buildAppUpdateMessage(current, latestVersion) {
+        const frag = document.createDocumentFragment();
+        function strong(text) {
+          const s = document.createElement("strong");
+          s.textContent = text;
+          return s;
+        }
+        function text(t) {
+          return document.createTextNode(t);
+        }
+        if (current === "0") {
+          frag.appendChild(text("You are on "));
+          frag.appendChild(strong("a version prior to v" + latestVersion));
+          frag.appendChild(text(", which is available to download now."));
+        } else {
+          frag.appendChild(text("You are on "));
+          frag.appendChild(strong("v" + current));
+          frag.appendChild(text(". "));
+          frag.appendChild(strong("v" + latestVersion));
+          frag.appendChild(text(" is available to download now."));
+        }
+        return frag;
+      }
+
+      // Open the update dialog for the currently known update, if any.
+      function showAppUpdateDialog() {
+        if (!_appUpdateInfo) return;
+        const $msg = document.getElementById("app-update-msg");
+        const $download = document.getElementById("btn-app-update-download");
+        const $dialog = document.getElementById("app-update-dialog");
+        if (!$dialog || !$download) return;
+        if ($msg) {
+          $msg.textContent = "";
+          $msg.appendChild(
+            buildAppUpdateMessage(currentAppVersion(), _appUpdateInfo.version),
+          );
+        }
+        $download.setAttribute("href", _appUpdateInfo.url);
+        $dialog.classList.add("visible");
+      }
+
+      // Reflect a candidate latest release into the UI: show the persistent
+      // badge + wire the download when it is newer than the running version,
+      // hide it otherwise. Returns true when an update is available.
+      function applyAppUpdateState(latest) {
+        const current = currentAppVersion();
+        const outdated =
+          latest &&
+          latest.version &&
+          latest.url &&
+          compareAppVersions(latest.version, current) > 0;
+        _appUpdateInfo = outdated ? latest : null;
+        document.body.classList.toggle("has-app-update", !!outdated);
+        const $download = document.getElementById("btn-app-update-download");
+        if ($download && outdated) $download.setAttribute("href", latest.url);
+        return !!outdated;
       }
 
       // Numeric-dotted compare: >0 when a is newer than b, <0 older, 0 equal.
@@ -7691,8 +7828,16 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       async function checkAndroidAppUpdate() {
         if (!/TCOAALApp\//.test(navigator.userAgent)) return;
 
-        // Throttle to one successful check per day. A failed check leaves the
-        // stored timestamp untouched so it retries on the next launch.
+        // Surface the badge immediately from the last known release, so an
+        // available update shows every launch even offline / when throttled.
+        try {
+          const cachedRaw = localStorage.getItem(APP_UPDATE_LATEST_KEY);
+          if (cachedRaw) applyAppUpdateState(JSON.parse(cachedRaw));
+        } catch (e) {}
+
+        // Hit the network at most once per day. A failed check leaves the
+        // stored timestamp untouched so it retries on the next launch; the
+        // badge stays up from the cache meanwhile.
         try {
           const last = parseInt(
             localStorage.getItem(APP_UPDATE_CHECK_KEY) || "0",
@@ -7712,20 +7857,13 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
 
         try {
           localStorage.setItem(APP_UPDATE_CHECK_KEY, String(Date.now()));
+          localStorage.setItem(APP_UPDATE_LATEST_KEY, JSON.stringify(latest));
         } catch (e) {}
 
-        const current = currentAppVersion();
-        if (compareAppVersions(latest.version, current) <= 0) return;
-
-        const $current = document.getElementById("app-update-current");
-        const $latest = document.getElementById("app-update-latest");
-        const $download = document.getElementById("btn-app-update-download");
-        const $dialog = document.getElementById("app-update-dialog");
-        if (!$dialog || !$download) return;
-        if ($current) $current.textContent = "v" + current;
-        if ($latest) $latest.textContent = "v" + latest.version;
-        $download.setAttribute("href", latest.url);
-        $dialog.classList.add("visible");
+        // Refresh the badge from the fresh result and, when a newer release is
+        // out, auto-open the dialog (at most once per day, gated by the
+        // throttle above).
+        if (applyAppUpdateState(latest)) showAppUpdateDialog();
       }
 
       // Step 2, share route. Called straight from the button's click handler:

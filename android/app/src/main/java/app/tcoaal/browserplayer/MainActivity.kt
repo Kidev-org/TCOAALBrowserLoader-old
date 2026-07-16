@@ -10,6 +10,7 @@ import android.os.Looper
 import android.view.WindowManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -129,6 +130,23 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 injectSaveSync()
             }
+
+            // A fresh install opened with no connection cannot reach
+            // https://tcoaal.app/, and the service-worker app shell has never
+            // been cached, so the WebView would show its raw error page. Swap in
+            // a themed offline notice instead. Once the app has been loaded
+            // online once, the SW serves the loader offline and this never fires.
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                if (!request.isForMainFrame) return
+                if (!UrlPolicy.isInternal(request.url?.toString())) return
+                view.loadDataWithBaseURL(
+                    START_URL, offlineHtml, "text/html", "UTF-8", START_URL
+                )
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -150,6 +168,19 @@ class MainActivity : AppCompatActivity() {
                     false
                 }
             }
+        }
+    }
+
+    /** Themed offline page (assets/offline.html), read once and reused. Falls
+     *  back to a minimal inline notice if the asset cannot be read. */
+    private val offlineHtml: String by lazy {
+        try {
+            assets.open("offline.html").bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            "<html><body style=\"background:#121212;color:#d3d0c0;" +
+                "font-family:Georgia,serif;text-align:center;padding:40px\">" +
+                "<h1>No connection</h1><p>Start the game once with an internet " +
+                "connection before it can run offline.</p></body></html>"
         }
     }
 
