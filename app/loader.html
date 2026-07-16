@@ -7740,8 +7740,8 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         }
         if (current === "0") {
           frag.appendChild(text("You are on "));
-          frag.appendChild(strong("a version prior to v" + latestVersion));
-          frag.appendChild(text(", which is available to download now."));
+          frag.appendChild(strong("an old version prior to v1.4.0"));
+          frag.appendChild(text(". Download " + strong("v" + latestVersion) + " right now."));
         } else {
           frag.appendChild(text("You are on "));
           frag.appendChild(strong("v" + current));
