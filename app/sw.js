@@ -1663,14 +1663,14 @@ self.addEventListener("fetch", (event) => {
   // cache headers.
   if (logicalPath === "sw.js") return;
 
-  // dl/{modId}.html: the per-mod download-tracking pages (see
-  // trackModDownload in lang-shim.js). Do NOT intercept. These exist only to
-  // be counted by Cloudflare Web Analytics, whose beacon is injected into the
-  // HTML at the edge, so the request has to reach the network as an ordinary
-  // document request. Serving one from here would both waste a hashed-path IDB
-  // lookup and flag the response as "fetched through SW". They are likewise
-  // kept out of APP_SHELL: a tracking ping offline is meaningless.
-  if (logicalPath.indexOf("dl/") === 0) return;
+  // api/*: the install-counter Worker (POST api/dl/{modId} to count an
+  // install, GET api/dl for every count; see trackModInstall in lang-shim.js).
+  // Do NOT intercept: these are live network calls to a Worker route on this
+  // same origin, and serving them from here would only waste a hashed-path IDB
+  // lookup before falling through to the network anyway. They stay out of
+  // APP_SHELL too: counting an install offline is meaningless, and the menu
+  // caches the counts it last saw under __install_counts__ instead.
+  if (logicalPath.indexOf("api/") === 0) return;
 
   // "Now Loading" image: the engine always requests the canonical
   // img/system/Loading.png (Graphics.setLoadingImage in rpg_managers.js),

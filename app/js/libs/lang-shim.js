@@ -2247,57 +2247,226 @@
     });
   }
 
+  // Install counts shown in the Mods menu, keyed by mod id. null until the
+  // first load resolves; the menu simply draws no count while it is null, so
+  // a slow or failed fetch costs nothing but the label.
+  var _installCounts = null;
+  var _installCountsAt = 0;
+  // Counts move slowly and are edge-cached for ~5min anyway, so a refetch
+  // within this window would only burn a request to redraw the same numbers.
+  var INSTALL_COUNTS_TTL_MS = 5 * 60 * 1000;
+  var INSTALL_COUNTS_KEY = "__install_counts__";
+  // Mods this browser has already counted. Deliberately NOT cleared by
+  // uninstallMod: surviving an uninstall is the whole point.
+  var COUNTED_MODS_KEY = "_countedMods";
+
+  /** Mod ids this browser has already counted an install for. */
+  function countedMods() {
+    try {
+      var raw = localStorage.getItem(COUNTED_MODS_KEY);
+      var list = raw ? JSON.parse(raw) : [];
+      return Object.prototype.toString.call(list) === "[object Array]"
+        ? list
+        : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function hasCountedInstall(modId) {
+    return countedMods().indexOf(modId) >= 0;
+  }
+
+  function markCountedInstall(modId) {
+    try {
+      var list = countedMods();
+      if (list.indexOf(modId) >= 0) return;
+      list.push(modId);
+      localStorage.setItem(COUNTED_MODS_KEY, JSON.stringify(list));
+    } catch (e) {
+      // Private mode / quota: worst case we count this mod again later.
+    }
+  }
+
+  /** Undo markCountedInstall after a POST we saw fail. */
+  function unmarkCountedInstall(modId) {
+    try {
+      var list = countedMods();
+      var i = list.indexOf(modId);
+      if (i < 0) return;
+      list.splice(i, 1);
+      localStorage.setItem(COUNTED_MODS_KEY, JSON.stringify(list));
+    } catch (e) {}
+  }
+
   /**
-   * Count one download of modId against Cloudflare Web Analytics by loading
-   * its tracking page (/dl/{modId}.html, generated at deploy time by
-   * tools/generate-dl-pages.js). The per-mod page turns the "top pages"
-   * report into a per-mod download report.
+   * Count one install of modId, at most once per browser. Fire-and-forget POST
+   * to the counter Worker (worker/src/index.js), which validates the id,
+   * rate-limits per IP and upserts one D1 row.
    *
-   * It has to be an iframe, not a fetch: Web Analytics on automatic setup
-   * injects its beacon into the HTML at the edge, and the beacon only counts
-   * a view when it EXECUTES. A fetch would pull the page down, beacon and
-   * all, and run nothing: no count, no error, no way to notice.
+   * Counting once per browser (rather than once per install) makes the number
+   * "how many people run this" instead of "how many times a file moved", which
+   * is what the Mods menu is really asking. Enable/disable never reaches here
+   * anyway: only the `!installed` branch raises the "install" action, so
+   * re-enabling a plugin or switching overhauls never counted. What this
+   * de-dupes is uninstall -> reinstall, and version updates.
    *
-   * Call only for user-initiated installs (the Mods menu and the Language
-   * menu), never for the automatic translation pulls in
-   * ensureTranslationsFor/ensureBaseFallbackInstalled: one overhaul install
-   * fires a burst of those, which would inflate the counts into noise.
+   * Trivially cheatable by clearing site data, which is fine: that is effort,
+   * and these are popularity figures, not audited ones.
+   *
+   * Two different events feed this, because "install" means different things:
+   *   - mods/plugins: the Mods menu install, which the user chose.
+   *   - translations: FIRST ACTIVATION (Scene_Lang), not the download. Every
+   *     translation for the active context is fetched automatically
+   *     (ensureTranslationsFor / ensureContextTranslations), so a translation's
+   *     download only proves the app ran online once, and counting it would
+   *     report the same number for all 20 languages.
+   *
+   * Never call this from the automatic pulls themselves
+   * (ensureTranslationsFor / ensureBaseFallbackInstalled).
    *
    * Best-effort by design: the install already succeeded by the time we get
-   * here, so nothing this does may surface an error to the caller.
+   * here, so nothing this does may surface an error to the caller. keepalive
+   * lets the POST outlive a scene change or reload.
    */
-  function trackModDownload(modId) {
+  function trackModInstall(modId) {
     try {
       if (!modId) return;
-      if (typeof document === "undefined") return;
+      if (typeof fetch !== "function") return;
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         return;
       }
-
-      var frame = document.createElement("iframe");
-      frame.style.display = "none";
-      frame.setAttribute("aria-hidden", "true");
-
-      var done = false;
-      var remove = function () {
-        if (done) return;
-        done = true;
-        clearTimeout(tid);
-        if (frame.parentNode) frame.parentNode.removeChild(frame);
-      };
-      // Drop the frame once the beacon has had its chance to fire, and again
-      // on a timer so a hung load can't leak the node.
-      var tid = setTimeout(remove, 10000);
-      frame.onload = function () {
-        setTimeout(remove, 1000);
-      };
-      frame.onerror = remove;
-
-      frame.src = "/dl/" + encodeURIComponent(modId) + ".html";
-      document.body.appendChild(frame);
+      if (hasCountedInstall(modId)) return;
+      // Mark BEFORE the POST resolves, and roll back only on a failure we
+      // actually observe. Marking in .then() would never run on the language
+      // path: activation calls location.reload() immediately, killing the page
+      // before the response lands, so every re-activation would recount. The
+      // POST itself still goes out (keepalive), so an unobserved outcome is
+      // overwhelmingly a success: assume it, and correct only what we see.
+      markCountedInstall(modId);
+      // Reflect it locally so the row's count updates immediately instead of
+      // waiting out the edge cache. Only when we already have counts:
+      // inventing a lone "1 install" while the rest are blank would read as
+      // though nobody else had ever installed it.
+      if (_installCounts && typeof _installCounts[modId] === "number") {
+        _installCounts[modId]++;
+      }
+      fetch("/api/dl/" + encodeURIComponent(modId), {
+        method: "POST",
+        keepalive: true,
+      })
+        .then(function (res) {
+          // Roll back ONLY on a response we actually received that says no
+          // (403/429/5xx), so a later attempt can still count this user.
+          // Silently never counting somebody is worse than a rare double count.
+          if (res && res.ok) return;
+          unmarkCountedInstall(modId);
+          if (_installCounts && typeof _installCounts[modId] === "number") {
+            _installCounts[modId]--;
+          }
+        })
+        .catch(function () {
+          // Deliberately NOT a rollback. A rejected fetch here does not mean
+          // the POST failed: the language path reloads the page immediately,
+          // which aborts this promise while `keepalive` still delivers the
+          // request. Rolling back would then un-mark exactly the case the
+          // pre-marking exists for, and every re-activation would recount.
+        });
     } catch (e) {
-      // Never let tracking break an install that already worked.
+      // Never let counting break an install that already worked.
     }
+  }
+
+  /**
+   * "1,204 installs", or "1,204 users" for a translation.
+   *
+   * The noun follows what was actually counted (see trackModInstall): a mod is
+   * counted when the user installs it, but a translation's download is
+   * automatic and meaningless, so it is counted at first activation instead.
+   * "installs" would be a lie there - nobody chose to install it - while
+   * "users" is exactly what an activation records.
+   */
+  function formatInstallCount(n, type) {
+    var s = String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    if (isTranslationType(type)) return s + (n === 1 ? " user" : " users");
+    return s + (n === 1 ? " install" : " installs");
+  }
+
+  /** The count to draw for a mod, or null when we have nothing to show. */
+  function installCountFor(modId) {
+    if (!_installCounts) return null;
+    var n = _installCounts[modId];
+    return typeof n === "number" ? n : null;
+  }
+
+  /**
+   * Load every mod's install count from the counter Worker, falling back to
+   * the last set we cached in IDB so the menu still shows numbers offline (or
+   * if the Worker is down). Caches each fresh set on the way through.
+   *
+   * done() runs whether or not anything was found: callers just redraw.
+   */
+  function loadInstallCounts(done) {
+    done = done || function () {};
+    var now = Date.now();
+    if (_installCounts && now - _installCountsAt < INSTALL_COUNTS_TTL_MS) {
+      done();
+      return;
+    }
+
+    var fromCache = function (next) {
+      openAssetsDb(function (db) {
+        if (!db) {
+          next();
+          return;
+        }
+        getAssetMain(db, INSTALL_COUNTS_KEY, function (raw) {
+          if (raw) {
+            try {
+              _installCounts = JSON.parse(raw);
+            } catch (e) {}
+          }
+          next();
+        });
+      });
+    };
+
+    if (typeof fetch !== "function") {
+      fromCache(done);
+      return;
+    }
+
+    var ctrl =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
+    var tid = ctrl
+      ? setTimeout(function () {
+          ctrl.abort();
+        }, 5000)
+      : null;
+    var opts = {};
+    if (ctrl) opts.signal = ctrl.signal;
+
+    fetch("/api/dl", opts)
+      .then(function (res) {
+        if (tid) clearTimeout(tid);
+        if (!res.ok) throw new Error(res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        _installCounts = data || {};
+        _installCountsAt = Date.now();
+        openAssetsDb(function (db) {
+          if (db)
+            putAsset(db, INSTALL_COUNTS_KEY, JSON.stringify(_installCounts));
+          done();
+        });
+      })
+      .catch(function () {
+        if (tid) clearTimeout(tid);
+        // Offline, Worker down, or not deployed yet: show the last numbers we
+        // saw rather than nothing.
+        fromCache(done);
+      });
   }
 
   function installMod(modId, basePath, onProgress, onDone, onError) {
@@ -5736,6 +5905,13 @@
     Scene_Mods.prototype.start = function () {
       Scene_MenuBase.prototype.start.call(this);
       var self = this;
+      // Install counts for the rows. Async and non-blocking: the menu opens
+      // and draws immediately, then redraws once (if) the numbers land, so a
+      // slow Worker never delays the scene.
+      loadInstallCounts(function () {
+        if (self._listWindow) self._listWindow.refresh();
+        if (self._activeModWindow) self._activeModWindow.refresh();
+      });
       // Mouse position tracker for cross-window hover-to-focus. Vanilla
       // MV's TouchInput only updates x/y on press, and MouseControl keeps
       // its own _mouseX/_mouseY private, so we attach our own listener
@@ -6144,7 +6320,7 @@
               _modStatus[mod.key].version = d.version || "";
               _modStatus[mod.key]._downloading = false;
               self._installing = null;
-              trackModDownload(mod.key);
+              trackModInstall(mod.key);
               if (isPluginType(mod.type)) {
                 setPluginActive(mod.key, true);
                 loadPluginMod(mod.key, function () {
@@ -6445,6 +6621,7 @@
         win.contents.fontSize = win.standardFontSize();
       }
 
+      var dateReserve = 0;
       if (mod.lastUpdate) {
         win.contents.fontSize = 16;
         win.resetTextColor();
@@ -6453,6 +6630,25 @@
           rect.x,
           rect.y + 4,
           rect.width - badgeReserve,
+          "right",
+        );
+        dateReserve = win.textWidth(mod.lastUpdate) + 12;
+        win.contents.fontSize = win.standardFontSize();
+      }
+
+      // How many people installed this mod, drawn left of the date in the same
+      // muted tone as the author so it reads as metadata rather than status.
+      // Null until the counts arrive (or forever, offline with nothing cached):
+      // the line just stays as it was.
+      var installs = installCountFor(mod.key);
+      if (installs !== null) {
+        win.contents.fontSize = 16;
+        win.contents.textColor = "#aaaacc";
+        win.drawText(
+          formatInstallCount(installs, mod.type),
+          rect.x,
+          rect.y + 4,
+          rect.width - badgeReserve - dateReserve,
           "right",
         );
         win.contents.fontSize = win.standardFontSize();
@@ -7213,6 +7409,14 @@
       }
       var self = this;
       function apply() {
+        // A translation's download is not a signal: every translation for the
+        // active context is pulled automatically (ensureTranslationsFor /
+        // ensureContextTranslations), so "installed" just means the app ran
+        // once online. Choosing to USE one is the real, user-initiated event,
+        // so translations are counted here, at first activation, instead.
+        // English is the untranslated baseline, not a translation: nothing to
+        // count. trackModInstall de-dupes, so re-activating never recounts.
+        if (!L.isEnglish) trackModInstall(L.key);
         // Pull the matching base-game translation first (when this is an
         // overhaul translation) so the SW can translate the original game lines
         // it doesn't cover from the moment the page reloads, not a sync later.
@@ -7252,7 +7456,6 @@
         function () {
           _modStatus[L.key].installed = true;
           _modStatus[L.key]._downloading = false;
-          trackModDownload(L.key);
           apply();
         },
         function () {

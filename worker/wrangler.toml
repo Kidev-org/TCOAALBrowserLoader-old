@@ -1,0 +1,50 @@
+name = "tcoaal-installs"
+main = "src/index.js"
+compatibility_date = "2026-07-16"
+
+# Same origin as the player, so the client needs no CORS and the Android
+# WebView (which loads https://tcoaal.app/) works unchanged. Everything outside
+# /api/* falls through to the GitHub Pages origin untouched.
+routes = [
+  { pattern = "tcoaal.app/api/*", zone_name = "tcoaal.app" }
+]
+
+# database_id comes from `wrangler d1 create tcoaal-installs`. See worker/README.md.
+[[d1_databases]]
+binding = "DB"
+database_name = "tcoaal-installs"
+database_id = "0f4aa6ca-1174-4b1b-beb1-a00a19a42b3f"
+
+# Per-IP ceilings, keyed on CF-Connecting-IP, bucketed by how fast the honest
+# version of each event can repeat. `period` accepts only 10 or 60.
+# See countInstall() in src/index.js for the reasoning behind each number.
+[[ratelimits]]
+name = "OVERHAUL_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 2
+  period = 60
+
+[[ratelimits]]
+name = "PLUGIN_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
+# Translations count at activation (each costs a page reload), but sampling
+# several of the 14 languages is legitimate: keep headroom so throttling never
+# biases the counts toward monolingual users.
+[[ratelimits]]
+name = "TRANSLATION_LIMITER"
+namespace_id = "1003"
+
+  [ratelimits.simple]
+  limit = 8
+  period = 60
+
+# Nothing here is secret: the counter is public by design.
+[observability]
+enabled = true
