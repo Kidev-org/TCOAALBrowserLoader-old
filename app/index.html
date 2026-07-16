@@ -1167,6 +1167,27 @@
           });
         }
 
+        // Enumerate every key under "prefix" in one transaction (getAllKeys
+        // over a bounded range). Used by the mod-completeness check to diff a
+        // mod's stored files against its manifest without a get() per file.
+        function idbGetAllKeys(db, prefix) {
+          return new Promise(function (resolve) {
+            try {
+              var tx = db.transaction(STORE_NAME, "readonly");
+              var range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+              var req = tx.objectStore(STORE_NAME).getAllKeys(range);
+              req.onsuccess = function () {
+                resolve(req.result || []);
+              };
+              req.onerror = function () {
+                resolve([]);
+              };
+            } catch (e) {
+              resolve([]);
+            }
+          });
+        }
+
         // Step 2: check whether game files are available (IDB or server.js).
         // We require BOTH a script file (rpg_core.js) and a way to get the
         // language data: either pre-extracted JSON in __lang_data__ or the
@@ -1482,7 +1503,7 @@
         // local re-parse); every other language stays on lang-shim's lazy
         // background sync.
 
-        function showUpdateSplash() {
+        function showUpdateSplash(msg) {
           try {
             splash.classList.remove("hidden");
             splash.innerHTML =
@@ -1490,7 +1511,9 @@
               'align-items:center;gap:18px;padding:24px;box-sizing:border-box">' +
               '<img src="/img/loading.png" alt="Loading" ' +
               'style="max-width:70vw;max-height:45vh;object-fit:contain" />' +
-              "<div>Updating translation...</div></div>";
+              "<div>" +
+              (msg || "Updating translation...") +
+              "</div></div>";
           } catch (e) {}
         }
 
@@ -1583,8 +1606,13 @@
           if (!entry || entry.type !== "translation" || !entry.langFile)
             return Promise.resolve();
 
-          return idbGet(db, "__mod_meta__:" + activeLang).then(
-            function (rawMeta) {
+          return Promise.all([
+            idbGet(db, "__mod_meta__:" + activeLang),
+            idbGetAllKeys(db, "mod:" + activeLang + ":"),
+          ]).then(function (res) {
+            var rawMeta = res[0];
+            var modKeys = res[1] || [];
+            {
               if (rawMeta == null) return; // not installed -> nothing to refresh
               var meta = {};
               try {
@@ -1597,9 +1625,27 @@
               var curVer = entry.version || "";
               var versionOk = !curVer || meta.version === curVer;
               var canReparse = /\.(csv|txt)$/i.test(entry.langFile);
-              // Fast exit: version current AND not a locally re-parsable format
-              // (e.g. a .loc translation) -> nothing this gate can refresh.
-              if (versionOk && !canReparse) return;
+
+              // A translation installed from an older/partial manifest can be
+              // missing files even when its version matches (the same broken
+              // state overhauls hit). Detect it so the re-download path below
+              // also fires for a mere gap, not only a version bump.
+              var have = {};
+              var pfx = "mod:" + activeLang + ":";
+              for (var mk = 0; mk < modKeys.length; mk++)
+                have[String(modKeys[mk]).substring(pfx.length)] = 1;
+              var filesMissing = false;
+              var tfiles = entry.files || [];
+              for (var tf = 0; tf < tfiles.length; tf++) {
+                if (!have[tfiles[tf]]) {
+                  filesMissing = true;
+                  break;
+                }
+              }
+
+              // Fast exit: version current, nothing missing, AND not a locally
+              // re-parsable format (e.g. a .loc translation) -> nothing to do.
+              if (versionOk && !filesMissing && !canReparse) return;
 
               // Judging parse-staleness needs LANG_PARSE_VERSION, and applying
               // either fix needs the parser itself; both live in lang-format.js.
@@ -1617,7 +1663,7 @@
                 var parseVer = window.LangFormat.LANG_PARSE_VERSION;
                 var parseStale =
                   canReparse && (meta.langParseVersion || 0) < parseVer;
-                if (versionOk && !parseStale) return; // already fresh
+                if (versionOk && !filesMissing && !parseStale) return; // fresh
 
                 // Loop guard: only the reload path (below) sets this; it stops a
                 // reload-requiring update that never "sticks" from looping.
@@ -1626,7 +1672,9 @@
                   if (sessionStorage.getItem(GUARD) === "1") return;
                 } catch (e) {}
 
-                var needsDownload = !versionOk;
+                // Missing files can only be refilled from the network; a plain
+                // parse-refresh cannot, so a gap forces a download too.
+                var needsDownload = !versionOk || filesMissing;
                 // A re-download needs the network; a local re-parse does not.
                 if (needsDownload && navigator.onLine === false) return;
 
@@ -1687,8 +1735,146 @@
                   }
                 });
               });
-            },
-          );
+            }
+          });
+        }
+
+        // Repair active mods whose stored file set is incomplete. A mod
+        // installed from an older manifest -- before missing files were added
+        // back to the source -- is missing those files in IDB, leaving it
+        // broken with no in-menu fix short of uninstall/reinstall. On boot, for
+        // every ACTIVE installed overhaul and plugin, diff the manifest file
+        // list against the "mod:{id}:" keys in IDB and, if any are missing,
+        // show the loading splash and fetch just those files (per-file, same
+        // URL layout as installMod) before the menu appears. Best-effort:
+        // offline, or a fetch that fails, leaves the mod as-is and boot
+        // continues; the next online launch retries. Only once every missing
+        // file is stored is the mod's meta advanced to the manifest version, so
+        // a partial repair never marks the mod current. Active translations are
+        // handled by ensureActiveTranslationFresh (it re-extracts the CLD
+        // cache too); this covers overhauls + plugins, which have no path.
+        function ensureActiveModsComplete(ctx) {
+          var db = ctx && ctx.db;
+          if (!db || !window.indexedDB) return Promise.resolve();
+          if (navigator.onLine === false) return Promise.resolve();
+
+          var modsData = null;
+          try {
+            modsData = JSON.parse(window.__modsDataJson || "null");
+          } catch (e) {}
+          if (!modsData) return Promise.resolve();
+
+          // Everything active this session: the overhaul in _activeMod plus
+          // every plugin in _activePlugins, deduplicated.
+          var ids = [];
+          function pushId(id) {
+            if (id && ids.indexOf(id) < 0) ids.push(id);
+          }
+          try {
+            pushId(localStorage.getItem("_activeMod") || null);
+          } catch (e) {}
+          try {
+            var rawP = localStorage.getItem("_activePlugins");
+            if (rawP) {
+              var arr = JSON.parse(rawP);
+              if (Array.isArray(arr)) arr.forEach(pushId);
+            }
+          } catch (e) {}
+          if (!ids.length) return Promise.resolve();
+
+          // Build the repair list: {id, entry, missing[]} for each active,
+          // installed mod with manifest files absent from IDB.
+          var repairs = [];
+          var scan = Promise.resolve();
+          ids.forEach(function (id) {
+            scan = scan.then(function () {
+              var entry = modsData[id];
+              var files = entry && entry.files;
+              if (!entry || !files || !files.length) return;
+              // A remote translation has its own repair path; skip it here.
+              if (entry.type === "translation") return;
+              return idbGet(db, "__mod_meta__:" + id).then(function (rawMeta) {
+                if (rawMeta == null) return; // not installed -> skip
+                return idbGetAllKeys(db, "mod:" + id + ":").then(
+                  function (keys) {
+                    var have = {};
+                    var plen = ("mod:" + id + ":").length;
+                    for (var k = 0; k < keys.length; k++)
+                      have[String(keys[k]).substring(plen)] = 1;
+                    var missing = [];
+                    for (var f = 0; f < files.length; f++)
+                      if (!have[files[f]]) missing.push(files[f]);
+                    if (missing.length)
+                      repairs.push({ id: id, entry: entry, missing: missing });
+                  },
+                );
+              });
+            });
+          });
+
+          return scan.then(function () {
+            if (!repairs.length) return;
+
+            showUpdateSplash("Updating mods...");
+
+            // Repair each mod in turn. wwwBase mirrors installMod: a remote
+            // (absolute-URL) path serves files directly; a local path keeps the
+            // www/ layout under /{path}/www/.
+            var chain = Promise.resolve();
+            repairs.forEach(function (r) {
+              chain = chain.then(function () {
+                var path = String(r.entry.path || "").replace(/\/$/, "");
+                var isRemote = /^https?:\/\//i.test(path);
+                var base = isRemote ? path + "/" : "/" + path + "/www/";
+                var ok = true;
+                var sub = Promise.resolve();
+                r.missing.forEach(function (rel) {
+                  sub = sub.then(function () {
+                    if (!ok) return;
+                    return fetch(base + rel)
+                      .then(function (res) {
+                        if (!res.ok) throw new Error(String(res.status));
+                        return res.arrayBuffer();
+                      })
+                      .then(function (buf) {
+                        return idbPut(db, "mod:" + r.id + ":" + rel, buf);
+                      })
+                      .catch(function () {
+                        ok = false;
+                      });
+                  });
+                });
+                return sub.then(function () {
+                  if (!ok) return; // partial: keep stale meta, retry next time
+                  // Every missing file is now stored. Advance the mod's meta to
+                  // the current manifest version and file count so the repair
+                  // sticks, preserving other meta fields (e.g. langParseVer).
+                  return idbGet(db, "__mod_meta__:" + r.id).then(
+                    function (rawMeta) {
+                      var meta = {};
+                      try {
+                        meta =
+                          typeof rawMeta === "string"
+                            ? JSON.parse(rawMeta)
+                            : rawMeta || {};
+                      } catch (e) {
+                        meta = {};
+                      }
+                      meta.version = r.entry.version || meta.version || "";
+                      meta.files = (r.entry.files || []).length;
+                      meta.date = new Date().toISOString().substring(0, 10);
+                      return idbPut(
+                        db,
+                        "__mod_meta__:" + r.id,
+                        JSON.stringify(meta),
+                      );
+                    },
+                  );
+                });
+              });
+            });
+            return chain;
+          });
         }
 
         // Step 2c: load favicon from IDB (icon/icon.png from the user's game files)
@@ -1859,10 +2045,14 @@
             // Preload language data and favicon (favicon is non-blocking).
             if (ctx.db) loadFavicon(ctx.db);
 
-            // Order matters: load mods.json first (the freshness gate reads
-            // it), then refresh the active translation BEFORE the language
-            // data is read, then preload the now-current language data.
+            // Order matters: load mods.json first (the freshness gates read
+            // it), then repair any incomplete active mods and refresh the
+            // active translation BEFORE the language data is read, then preload
+            // the now-current language data.
             return preloadModsData(ctx.db)
+              .then(function () {
+                return ensureActiveModsComplete(ctx);
+              })
               .then(function () {
                 return ensureActiveTranslationFresh(ctx);
               })
