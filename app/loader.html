@@ -5079,13 +5079,22 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       }
 
       /** Returns true if the store contains at least one entry. */
+      // True only when an actual game is imported. We test for the engine
+      // file (js/rpg_core.js) rather than "any key present": index.html's
+      // boot writes bookkeeping keys into the same 'assets' store on every
+      // visit (preloadModsData -> __shell:mods.json__, the lang cache, etc.),
+      // so a fresh visit with no game imported still leaves the store
+      // non-empty. Keying off js/rpg_core.js mirrors index.html's
+      // checkGameFiles gate (and REQUIRED_FILES enforces it on every import),
+      // so a bookkeeping-only store no longer triggers a false "manage panel +
+      // files-missing wall" for a user who never imported a game.
       function hasAnyAsset(db) {
         return new Promise((resolve) => {
           const req = db
             .transaction(STORE_NAME, "readonly")
             .objectStore(STORE_NAME)
-            .count();
-          req.onsuccess = () => resolve(req.result > 0);
+            .get("js/rpg_core.js");
+          req.onsuccess = () => resolve(req.result != null);
           req.onerror = () => resolve(false);
         });
       }
@@ -7741,7 +7750,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         if (current === "0") {
           frag.appendChild(text("You are on "));
           frag.appendChild(strong("an old version prior to v1.4.0"));
-          frag.appendChild(text(". Download " + strong("v" + latestVersion) + " right now."));
+          frag.appendChild(text(". Download "));
+          frag.appendChild(strong("v" + latestVersion));
+          frag.appendChild(text(" right now."));
         } else {
           frag.appendChild(text("You are on "));
           frag.appendChild(strong("v" + current));
@@ -8153,6 +8164,13 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           return;
         }
 
+        // Android app self-update: independent of whether a game is imported,
+        // so it runs BEFORE the fresh-install early-return below. Otherwise the
+        // update pill/dialog would never appear on the import screen (a phone
+        // with no game imported) - exactly where a user on an outdated app
+        // lands. Fire-and-forget; its own UA guard no-ops on desktop/web.
+        checkAndroidAppUpdate().catch(function () {});
+
         if (!(await hasAnyAsset(db))) return; // fresh: default UI shows
 
         // Already-imported: show manage panel and run healthcheck. Hiding
@@ -8170,9 +8188,6 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         // parse, per Step 1's check that none of them are deferred/async).
         await refreshVersionsForPlay();
         await refreshHealthcheck();
-
-        // Fire-and-forget: never let the update check block or break the loader.
-        checkAndroidAppUpdate().catch(function () {});
       })();
 
       // Diagnostic report (#report route).
