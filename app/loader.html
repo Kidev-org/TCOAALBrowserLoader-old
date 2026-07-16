@@ -161,6 +161,8 @@
         --red: #955456;
         --white: #ffffff;
         --black: #000000;
+        /* Same gold the github-link hover already uses (210, 168, 58). */
+        --gold: #d2a83a;
         --bg-color: #1a1a1a;
         --bg-color-darker: #121212;
         --bg-color-section: #2a2a2a;
@@ -327,6 +329,7 @@
       .tool-link,
       .feedback-link,
       .steam-link,
+      .donate-link,
       .install-link,
       .android-link {
         color: rgba(255, 255, 255, 0.9);
@@ -346,37 +349,57 @@
       /* The Steam buy link is icon-only and only surfaces on mobile, where
          the full "Buy on Steam" banner is removed. On desktop/tablet the
          banner covers it, so it stays hidden until a mobile media query
-         opts it back in. */
-      .steam-link {
+         opts it back in. The donate chip is the same deal: it stands in for
+         the donate card that shares the banner's fate. */
+      .steam-link,
+      .donate-link {
         display: none;
+      }
+
+      /* The chip carries no gold of its own: in the bar it is one of six
+         equals, so it takes the row's plain treatment and reveals gold only as
+         a hover tint, exactly like each sibling reveals its own accent (the
+         icon stays white throughout, as theirs do). The glow belongs to the
+         .donate-card, where there is room for it to read as emphasis rather
+         than noise. */
+      .donate-link:hover {
+        color: var(--white);
+        background: rgba(210, 168, 58, 0.55);
+        border-color: rgba(210, 168, 58, 0.75);
+        transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
 
       .github-link:hover {
         color: var(--white);
-        background: rgba(210, 168, 58, 0.15);
-        border-color: rgba(210, 168, 58, 0.35);
+        background: rgba(210, 168, 58, 0.55);
+        border-color: rgba(210, 168, 58, 0.75);
         transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
 
       .tool-link:hover {
         color: var(--white);
-        background: rgba(178, 72, 78, 0.15);
-        border-color: rgba(178, 72, 78, 0.35);
+        background: rgba(178, 72, 78, 0.55);
+        border-color: rgba(178, 72, 78, 0.75);
         transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
 
       .feedback-link:hover {
         color: var(--white);
-        background: rgba(74, 130, 200, 0.15);
-        border-color: rgba(74, 130, 200, 0.3);
+        background: rgba(74, 130, 200, 0.55);
+        border-color: rgba(74, 130, 200, 0.75);
         transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
 
       .steam-link:hover {
         color: var(--white);
-        background: rgba(208, 110, 48, 0.15);
-        border-color: rgba(208, 110, 48, 0.35);
+        background: rgba(208, 110, 48, 0.55);
+        border-color: rgba(208, 110, 48, 0.75);
         transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
 
       .install-link {
@@ -385,21 +408,24 @@
       }
       .install-link:hover {
         color: var(--white);
-        background: rgba(205, 60, 155, 0.15);
-        border-color: rgba(205, 60, 155, 0.35);
+        background: rgba(205, 60, 155, 0.55);
+        border-color: rgba(205, 60, 155, 0.75);
         transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
       .android-link:hover {
         color: var(--white);
-        background: rgba(88, 172, 106, 0.15);
-        border-color: rgba(88, 172, 106, 0.3);
+        background: rgba(88, 172, 106, 0.55);
+        border-color: rgba(88, 172, 106, 0.75);
         transform: translateY(-1px);
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
       }
 
       .tool-link .tool-icon,
       .github-link .github-icon,
       .feedback-link .feedback-icon,
       .steam-link .steam-icon,
+      .donate-link .donate-icon,
       .install-link .install-icon,
       .android-link .android-icon {
         width: 18px;
@@ -408,15 +434,25 @@
         flex: 0 0 auto;
       }
 
-      .steam-buy-card {
+      /* The buy/donate stack. Owns the corner placement and the shared width
+         so the donate card sits directly under the Steam banner and matches it
+         edge to edge without either card knowing the other's height. */
+      .buy-stack {
         position: absolute;
         top: 8px;
         left: 8px;
         z-index: 10;
         display: flex;
         flex-direction: column;
-        gap: clamp(8px, 1.2vmin, 14px);
+        gap: clamp(6px, 0.9vmin, 10px);
         width: clamp(300px, 32vmin, 480px);
+      }
+
+      .steam-buy-card {
+        display: flex;
+        flex-direction: column;
+        gap: clamp(8px, 1.2vmin, 14px);
+        width: 100%;
         padding: clamp(12px, 1.6vmin, 20px);
         background: rgba(15, 15, 15, 0.85);
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -462,8 +498,83 @@
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
       }
 
+      /* Donate card: same width as the Steam banner (both are 100% of
+         .buy-stack), but a single centred row instead of image + label, so it
+         reads as a slim footer under the banner rather than a second card
+         competing with it. Gold, and the only glowing thing on the page. */
+      .donate-card {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        padding: clamp(7px, 0.95vmin, 11px);
+        background: rgba(15, 15, 15, 0.85);
+        border: 1px solid rgba(210, 168, 58, 0.5);
+        border-radius: 8px;
+        color: var(--gold);
+        text-decoration: none;
+        font-family: "Georgia", serif;
+        transition:
+          background 0.25s ease,
+          border-color 0.25s ease,
+          box-shadow 0.25s ease;
+        animation: donateGlow 3s ease-in-out infinite;
+      }
+
+      .donate-card:hover {
+        background: rgba(210, 168, 58, 0.55);
+        border-color: rgba(210, 168, 58, 0.75);
+        /* Settle on the glow's bright end while hovered instead of pulsing
+           under the cursor. */
+        animation: none;
+        text-shadow: 0 0px 10px rgba(0, 0, 0, 1);
+        box-shadow:
+          0 0 22px rgba(210, 168, 58, 0.5),
+          inset 0 0 14px rgba(210, 168, 58, 0.12);
+      }
+
+      .donate-card .donate-label {
+        font-size: clamp(12px, 1.5vmin, 15px);
+        letter-spacing: 0.1em;
+        font-weight: bold;
+        text-transform: uppercase;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+      }
+
+      .donate-card .donate-icon {
+        width: clamp(14px, 1.7vmin, 17px);
+        height: clamp(14px, 1.7vmin, 17px);
+        fill: currentColor;
+        flex: 0 0 auto;
+      }
+
+      @keyframes donateGlow {
+        0% {
+          box-shadow:
+            0 0 8px rgba(210, 168, 58, 0.2),
+            inset 0 0 10px rgba(210, 168, 58, 0.04);
+        }
+        50% {
+          box-shadow:
+            0 0 20px rgba(210, 168, 58, 0.45),
+            inset 0 0 10px rgba(210, 168, 58, 0.12);
+        }
+        100% {
+          box-shadow:
+            0 0 8px rgba(210, 168, 58, 0.2),
+            inset 0 0 10px rgba(210, 168, 58, 0.04);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .donate-card {
+          animation: none;
+        }
+      }
+
       @media (max-width: 720px) {
-        .steam-buy-card {
+        .buy-stack {
           display: none;
         }
       }
@@ -531,6 +642,13 @@
         gap: clamp(8px, 1.2vmin, 14px);
         text-align: center;
       }
+      /* The fresh-import heading now only carries the Android "Import your
+         game" label; on desktop its span is display:none, leaving an empty
+         heading that would still add one flex gap. Collapse it so the panel
+         starts straight at the instructions. */
+      body:not(.android-app) #info-fresh .panel-title {
+        display: none;
+      }
       /* Groups the import instructions + buttons. Default is a plain stacked
          column (same look as before the wrapper); landscape turns it into the
          column beside the install card. */
@@ -548,7 +666,7 @@
       }
 
       .info-panel .info {
-        font-size: clamp(14px, 1.7vmin, 18px);
+        font-size: clamp(15px, 1.95vmin, 21px);
         line-height: 1.6;
         color: rgba(255, 255, 255, 0.82);
         margin: 0;
@@ -636,6 +754,167 @@
 
       .action-btn.secondary:hover:not(:disabled) {
         background: var(--bg-color-section-lighter);
+      }
+
+      /* ----- Import split: the two entry buttons (folder / .zip) fused into a
+         single control. Left is the app's green (--green), right its purple
+         (--purple) -- the same two theme accents used across this loader, read
+         here as Andrew / Ashley, not sampled from the game files. At rest the
+         control is ONE horizontal gradient: solid green, a quick blend across
+         the middle, solid purple -- no hard seam. Hovering a side fades in its
+         solid colour and sweeps it across a straight midline to take the whole
+         control, gliding its label to centre while the other side is covered
+         underneath; leaving reverses it back to the gradient. Glows on hover
+         like the PLAY button.
+
+         The two halves are grid-stacked in one cell (not absolutely placed) so
+         the control takes its height from their real box and collapses cleanly
+         to nothing when both are hidden during import (.loading-hidden). Each
+         half is transparent and clipped to its side by a straight vertical cut
+         (so hover hit-testing is per-side and the gradient shows through); on
+         hover the clip opens to the full rectangle, sweeping in. --- */
+      .panel-footer .import-split {
+        flex: 1 1 100%;
+        min-width: 0;
+      }
+      .import-split {
+        /* Diagonal lean of the seam: how far the half boundary tilts from the
+           vertical, top vs bottom. The half clips use it for hit-testing; the
+           rest gradient below is angled to match so the visible blend runs
+           along the same diagonal. */
+        --seam: clamp(12px, 2vmin, 22px);
+        position: relative;
+        display: grid;
+        border: 3px solid var(--black);
+        border-radius: 4px;
+        overflow: hidden;
+        isolation: isolate;
+        box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.28);
+        transition: box-shadow 0.3s ease;
+        /* Rest look: one diagonal gradient -- solid green, a quick green->
+           purple blend across a leaning midline, solid purple. Halves sit atop
+           transparent, so this shows through until one is hovered. */
+        background: linear-gradient(
+          117deg,
+          var(--green) 0,
+          var(--green) 46%,
+          var(--purple) 54%,
+          var(--purple) 100%
+        );
+      }
+      .import-half {
+        grid-area: 1 / 1;
+        min-width: 0;
+        appearance: none;
+        margin: 0;
+        border: none;
+        padding: clamp(11px, 1.5vmin, 18px) 0;
+        cursor: pointer;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--black);
+        font-family: "Georgia", serif;
+        font-weight: bold;
+        font-size: clamp(15px, 2.3vmin, 24px);
+        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
+        transition:
+          clip-path 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+          background 0.25s ease;
+      }
+      .import-half.left {
+        clip-path: polygon(
+          0 0,
+          calc(50% + var(--seam)) 0,
+          calc(50% - var(--seam)) 100%,
+          0 100%
+        );
+      }
+      .import-half.right {
+        clip-path: polygon(
+          calc(50% + var(--seam)) 0,
+          100% 0,
+          100% 100%,
+          calc(50% - var(--seam)) 100%
+        );
+      }
+      /* The label is a full-width centred block, so translating it by a share
+         of its own width (= the control's width) parks its centre in the
+         visible wedge at rest, then slides it to the middle on takeover. */
+      .import-half-label {
+        display: block;
+        width: 100%;
+        text-align: center;
+        transform: translateX(var(--label-shift, 0));
+        transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .import-half.left {
+        --label-shift: -25%;
+      }
+      .import-half.right {
+        --label-shift: 25%;
+      }
+      /* Takeover: the hovered/focused half rises above the other and its clip
+         opens to the full rectangle, sweeping the seam off-screen. */
+      .import-half.left:hover,
+      .import-half.left:focus-visible,
+      .import-half.right:hover,
+      .import-half.right:focus-visible {
+        z-index: 2;
+        clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+        --label-shift: 0;
+      }
+      .import-half.left:hover,
+      .import-half.left:focus-visible {
+        background: var(--green);
+      }
+      .import-half.right:hover,
+      .import-half.right:focus-visible {
+        background: var(--purple);
+      }
+      .import-half:focus-visible {
+        outline: 2px solid var(--white);
+        outline-offset: 3px;
+      }
+      /* Glow lives on the container, not the halves: clip-path crops the
+         element's own box-shadow, so a half can't glow itself. Colour follows
+         the active side. */
+      .import-split:has(.import-half.left:hover),
+      .import-split:has(.import-half.left:focus-visible) {
+        box-shadow:
+          0 0 20px rgba(134, 211, 122, 0.6),
+          inset 0 0 18px rgba(0, 0, 0, 0.28);
+      }
+      .import-split:has(.import-half.right:hover),
+      .import-split:has(.import-half.right:focus-visible) {
+        box-shadow:
+          0 0 20px rgba(236, 131, 195, 0.6),
+          inset 0 0 18px rgba(0, 0, 0, 0.28);
+      }
+      .import-half:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .import-half.loading-hidden {
+        display: none;
+      }
+      /* Android has no folder picker, so the left half is removed elsewhere
+         (body.android-app #btn-load). The surviving .zip half fills the control
+         over a flat purple background, reading as one plain button. */
+      body.android-app .import-split {
+        background: var(--purple);
+      }
+      body.android-app .import-half.right {
+        clip-path: none;
+        --label-shift: 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .import-half,
+        .import-half-label,
+        .import-split {
+          transition: none;
+        }
       }
 
       /* In-place drag-and-drop swap. While a folder/.zip is dragged over the
@@ -1302,6 +1581,7 @@
         .tool-link,
         .feedback-link,
         .steam-link,
+        .donate-link,
         .install-link,
         .android-link {
           padding: 9px 11px;
@@ -1312,17 +1592,20 @@
         .tool-link span,
         .feedback-link span,
         .steam-link span,
+        .donate-link span,
         .install-link span,
         .android-link span {
           display: none;
         }
-        .steam-link {
+        .steam-link,
+        .donate-link {
           display: flex;
         }
         .tool-link .tool-icon,
         .github-link .github-icon,
         .feedback-link .feedback-icon,
         .steam-link .steam-icon,
+        .donate-link .donate-icon,
         .install-link .install-icon,
         .android-link .android-icon {
           width: 22px;
@@ -1379,7 +1662,7 @@
          status / install info panel on the right: keeping the top-middle of
          the background (the title) visible above the panel. */
       @media (orientation: landscape) and (max-height: 600px) {
-        .steam-buy-card {
+        .buy-stack {
           display: none;
         }
 
@@ -1584,6 +1867,17 @@
       #modding-host.view-animating {
         display: block !important;
       }
+      /* The top-links bar and buy-stack are identical between the two views and
+         fixed at the same spot, so during the crossfade BOTH copies paint and
+         their semi-transparent backgrounds double up into a visibly darker
+         block. They don't animate (only .content fades), so the incoming view's
+         copy is already at full opacity in the same place: hide the outgoing
+         view's copy and the handoff is seamless. Loader side here, modding side
+         mirrored in the shadow stylesheet. */
+      .overlay.view-animating .top-links,
+      .overlay.view-animating .buy-stack {
+        visibility: hidden;
+      }
       @media (prefers-reduced-motion: reduce) {
         .overlay[class*="anim-"] .content {
           animation-duration: 0.01s;
@@ -1696,6 +1990,21 @@
           </svg>
           <span>Buy The Coffin of Andy and Leyley on Steam</span>
         </a>
+        <a
+          href="https://github.com/sponsors/Kidev"
+          target="_blank"
+          rel="noopener"
+          class="donate-link"
+          aria-label="Donate to tcoaal.app"
+          onclick="event.stopPropagation()"
+        >
+          <svg class="donate-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="m12 21.35-.94-.86C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-9.06 11.99L12 21.35z"
+            />
+          </svg>
+          <span>Donate to tcoaal.app</span>
+        </a>
         <button
           class="install-link"
           id="install-link"
@@ -1774,21 +2083,37 @@
         })();
       </script>
 
-      <a
-        href="https://store.steampowered.com/app/2378900/The_Coffin_of_Andy_and_Leyley/"
-        target="_blank"
-        rel="noopener"
-        class="steam-buy-card"
-        onclick="event.stopPropagation()"
-      >
-        <img
-          class="steam-header-img"
-          src="img/tcoaal-steam-header.jpg"
-          alt="The Coffin of Andy and Leyley"
-          loading="lazy"
-        />
-        <span class="steam-buy-label">Buy on Steam</span>
-      </a>
+      <div class="buy-stack">
+        <a
+          href="https://store.steampowered.com/app/2378900/The_Coffin_of_Andy_and_Leyley/"
+          target="_blank"
+          rel="noopener"
+          class="steam-buy-card"
+          onclick="event.stopPropagation()"
+        >
+          <img
+            class="steam-header-img"
+            src="img/tcoaal-steam-header.jpg"
+            alt="The Coffin of Andy and Leyley"
+            loading="lazy"
+          />
+          <span class="steam-buy-label">Buy on Steam</span>
+        </a>
+        <a
+          href="https://github.com/sponsors/Kidev"
+          target="_blank"
+          rel="noopener"
+          class="donate-card"
+          onclick="event.stopPropagation()"
+        >
+          <svg class="donate-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="m12 21.35-.94-.86C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-9.06 11.99L12 21.35z"
+            />
+          </svg>
+          <span class="donate-label">Donate to tcoaal.app</span>
+        </a>
+      </div>
 
       <div class="content">
         <h1 class="sr-only">
@@ -1873,7 +2198,6 @@
 
         <div class="panel info-panel" id="info-fresh">
           <h2 class="panel-title">
-            <span class="android-hide">Play TCOAAL in browser (desktop/mobile)</span>
             <span class="android-only">Import your game</span>
           </h2>
 
@@ -1889,9 +2213,8 @@
                   )
                 "
                 style="cursor: pointer"
-                >The Coffin of Andy and Leyley</b
-              >
-              by Kit9
+                >The&nbsp;Coffin&nbsp;of&nbsp;Andy&nbsp;and&nbsp;Leyley</b
+              >&nbsp;by&nbsp;Kit9
             </p>
             <p class="info">
               <span class="android-hide">Load your owned copy of the game into your browser,<br />
@@ -1909,20 +2232,22 @@
                  them while a folder/.zip is dragged over the page. -->
             <div class="import-drop-area" id="import-drop-area">
               <div class="panel-footer">
-                <button
-                  class="action-btn"
-                  id="btn-load"
-                  onclick="loadGameFiles()"
-                >
-                  Import Folder
-                </button>
-                <button
-                  class="action-btn"
-                  id="btn-load-zip"
-                  onclick="loadGameZip()"
-                >
-                  Import .zip file
-                </button>
+                <div class="import-split">
+                  <button
+                    class="import-half left"
+                    id="btn-load"
+                    onclick="loadGameFiles()"
+                  >
+                    <span class="import-half-label">Import Folder</span>
+                  </button>
+                  <button
+                    class="import-half right"
+                    id="btn-load-zip"
+                    onclick="loadGameZip()"
+                  >
+                    <span class="import-half-label">Import .zip file</span>
+                  </button>
+                </div>
               </div>
               <div class="import-dropzone" id="import-dropzone" aria-hidden="true">
                 <svg
@@ -2463,7 +2788,10 @@
       }
       .github-link,
       .tool-link,
-      .feedback-link {
+      .feedback-link,
+      .donate-link,
+      .install-link,
+      .android-link {
         color: rgba(255, 255, 255, 0.9);
         text-decoration: none;
         transition: all 0.3s ease;
@@ -2477,10 +2805,42 @@
         font-size: 0.85em;
         font-family: "Georgia", serif;
       }
+      /* Same contract as the loader's copy: hidden until a beforeinstallprompt
+         arrives, which setInstallStepVisible() reveals by setting an inline
+         display. It reaches this copy through MOD_ROOT (see the loader's
+         topLinkCopies()). */
+      .install-link {
+        display: none;
+        cursor: pointer;
+      }
+      /* The donate chip stands in for the donate card on small screens only,
+         exactly as .steam-link does for the banner: on desktop the card is
+         visible, so the chip would be a duplicate. */
+      .donate-link {
+        display: none;
+      }
       .github-link:hover {
         color: var(--white);
         background: rgba(74, 144, 226, 0.15);
         border-color: rgba(74, 144, 226, 0.3);
+        transform: translateY(-1px);
+      }
+      .donate-link:hover {
+        color: var(--white);
+        background: rgba(210, 168, 58, 0.15);
+        border-color: rgba(210, 168, 58, 0.35);
+        transform: translateY(-1px);
+      }
+      .install-link:hover {
+        color: var(--white);
+        background: rgba(205, 60, 155, 0.15);
+        border-color: rgba(205, 60, 155, 0.35);
+        transform: translateY(-1px);
+      }
+      .android-link:hover {
+        color: var(--white);
+        background: rgba(88, 172, 106, 0.15);
+        border-color: rgba(88, 172, 106, 0.3);
         transform: translateY(-1px);
       }
       .tool-link:hover {
@@ -2497,11 +2857,23 @@
       }
       .tool-link .tool-icon,
       .github-link .github-icon,
-      .feedback-link .feedback-icon {
+      .feedback-link .feedback-icon,
+      .donate-link .donate-icon,
+      .install-link .install-icon,
+      .android-link .android-icon {
         width: 18px;
         height: 18px;
         fill: currentColor;
         flex: 0 0 auto;
+      }
+
+      /* The Android app ships these two as native affordances already, so the
+         web install prompt and the APK download are noise there. Mirrors the
+         loader's body.android-app rules; inside the shadow tree the flag
+         arrives on the host element instead of body. */
+      :host(.android-app) .install-link,
+      :host(.android-app) .android-link {
+        display: none !important;
       }
 
       /* Flip at the SAME threshold as the "Back to loader" button (60rem,
@@ -2513,19 +2885,28 @@
         (orientation: landscape) and (max-height: 600px) {
         .github-link,
         .tool-link,
-        .feedback-link {
+        .feedback-link,
+        .donate-link,
+        .install-link,
+        .android-link {
           padding: 9px 11px;
           gap: 0;
           background: rgba(15, 15, 15, 0.9);
         }
         .github-link span,
         .tool-link span,
-        .feedback-link span {
+        .feedback-link span,
+        .donate-link span,
+        .install-link span,
+        .android-link span {
           display: none;
         }
         .tool-link .tool-icon,
         .github-link .github-icon,
-        .feedback-link .feedback-icon {
+        .feedback-link .feedback-icon,
+        .donate-link .donate-icon,
+        .install-link .install-icon,
+        .android-link .android-icon {
           width: 22px;
           height: 22px;
         }
@@ -2546,7 +2927,11 @@
           );
           pointer-events: none;
         }
-        .top-links > a {
+        /* Buttons too, not just anchors: the install control is a <button>,
+           and the bar itself is pointer-events:none so taps fall through its
+           empty gutter. Without this it would be visible but dead. */
+        .top-links > a,
+        .top-links > button {
           pointer-events: auto;
         }
         /* Clear the fixed bottom link bar so the last control isn't hidden. */
@@ -3507,15 +3892,24 @@
         fill: currentColor;
         flex: 0 0 auto;
       }
-      .steam-buy-card {
+      /* Buy/donate stack (mirrors the loader's). Owns the corner placement and
+         the shared width so the donate card sits directly under the banner and
+         matches it edge to edge, whatever height the banner takes. */
+      .buy-stack {
         position: fixed;
         top: 8px;
         left: 8px;
         z-index: 10;
         display: flex;
         flex-direction: column;
-        gap: clamp(8px, 1.2vmin, 14px);
+        gap: clamp(6px, 0.9vmin, 10px);
         width: clamp(300px, 32vmin, 480px);
+      }
+      .steam-buy-card {
+        display: flex;
+        flex-direction: column;
+        gap: clamp(8px, 1.2vmin, 14px);
+        width: 100%;
         padding: clamp(12px, 1.6vmin, 20px);
         background: rgba(15, 15, 15, 0.85);
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -3557,33 +3951,102 @@
         text-transform: uppercase;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
       }
+
+      /* Donate card (mirrors the loader's): same width as the banner, a single
+         slim row instead of image + label, gold and glowing. */
+      .donate-card {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        padding: clamp(7px, 0.95vmin, 11px);
+        background: rgba(15, 15, 15, 0.85);
+        border: 1px solid rgba(210, 168, 58, 0.5);
+        border-radius: 8px;
+        color: var(--gold);
+        text-decoration: none;
+        font-family: "Georgia", serif;
+        transition:
+          background 0.25s ease,
+          border-color 0.25s ease,
+          box-shadow 0.25s ease;
+        animation: donateGlow 3s ease-in-out infinite;
+      }
+      .donate-card:hover {
+        background: rgba(210, 168, 58, 0.16);
+        border-color: rgba(210, 168, 58, 0.85);
+        animation: none;
+        box-shadow:
+          0 0 22px rgba(210, 168, 58, 0.5),
+          inset 0 0 14px rgba(210, 168, 58, 0.12);
+      }
+      .donate-card .donate-label {
+        font-size: clamp(12px, 1.5vmin, 15px);
+        letter-spacing: 0.1em;
+        font-weight: bold;
+        text-transform: uppercase;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+      }
+      .donate-card .donate-icon {
+        width: clamp(14px, 1.7vmin, 17px);
+        height: clamp(14px, 1.7vmin, 17px);
+        fill: currentColor;
+        flex: 0 0 auto;
+      }
+      @keyframes donateGlow {
+        0% {
+          box-shadow:
+            0 0 8px rgba(210, 168, 58, 0.2),
+            inset 0 0 10px rgba(210, 168, 58, 0.04);
+        }
+        50% {
+          box-shadow:
+            0 0 20px rgba(210, 168, 58, 0.45),
+            inset 0 0 10px rgba(210, 168, 58, 0.12);
+        }
+        100% {
+          box-shadow:
+            0 0 8px rgba(210, 168, 58, 0.2),
+            inset 0 0 10px rgba(210, 168, 58, 0.04);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .donate-card {
+          animation: none;
+        }
+      }
+
       /* Same threshold as the "Back to loader" button (60rem): when the pinned
          back button takes the top-left corner, the big Steam banner (also fixed
          top-left) must give way to the compact icon in the bottom link bar, so
          the two never overlap. */
       @media (max-width: 60rem) {
-        .steam-buy-card {
+        .buy-stack {
           display: none;
         }
       }
       @media (max-width: 60rem),
         (orientation: landscape) and (max-height: 600px) {
-        .steam-link {
+        .steam-link,
+        .donate-link {
           display: flex;
           padding: 9px 11px;
           gap: 0;
           background: rgba(15, 15, 15, 0.9);
         }
-        .steam-link span {
+        .steam-link span,
+        .donate-link span {
           display: none;
         }
-        .steam-link .steam-icon {
+        .steam-link .steam-icon,
+        .donate-link .donate-icon {
           width: 22px;
           height: 22px;
         }
       }
       @media (orientation: landscape) and (max-height: 600px) {
-        .steam-buy-card {
+        .buy-stack {
           display: none;
         }
       }
@@ -3651,6 +4114,15 @@
       }
       :host(.anim-out-down) .wrap {
         animation: viewOutDown 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+      }
+      /* Mirror of the loader-side rule: hide this view's static bars while
+         it is the outgoing view of a crossfade, so its copy doesn't double
+         up with the loader's identical, same-position copy into a darker
+         block. They sit outside .wrap (siblings, not children), so the .wrap
+         fade never touches them. */
+      :host(.view-animating) .top-links,
+      :host(.view-animating) .buy-stack {
+        visibility: hidden;
       }
       @media (prefers-reduced-motion: reduce) {
         :host([class*="anim-"]) .wrap {
@@ -3720,22 +4192,78 @@
         </svg>
         <span>Buy The Coffin of Andy and Leyley on Steam</span>
       </a>
+      <a
+        href="https://github.com/sponsors/Kidev"
+        target="_blank"
+        rel="noopener"
+        class="donate-link"
+        aria-label="Donate to tcoaal.app"
+      >
+        <svg class="donate-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="m12 21.35-.94-.86C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-9.06 11.99L12 21.35z"
+          />
+        </svg>
+        <span>Donate to tcoaal.app</span>
+      </a>
+      <!-- The install/APK pair the loader also carries. Both are driven by the
+           loader's scripts, which reach this copy through MOD_ROOT: no id here,
+           since the loader's ids already exist in the light DOM and these are
+           found by class instead. -->
+      <button
+        class="install-link"
+        aria-label="Install TCOAAL as browser app"
+        onclick="promptInstall(); event.stopPropagation()"
+      >
+        <svg class="install-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h7v2H8v2h8v-2h-3v-2h7a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm-1 12H5V5h14v10z"/>
+          <path d="M13 10.42V7h-2v3.42L9.41 8.83 8 10.24 12 14.24l4-4-1.42-1.42z"/>
+        </svg>
+        <span>Install in browser</span>
+      </button>
+      <a
+        class="android-link"
+        href="https://github.com/Kidev/TCOAALBrowserLoader/releases/latest"
+        target="_blank"
+        rel="noopener"
+        aria-label="Download Android app"
+      >
+        <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 18c0 .55.45 1 1 1h1v3.5c0 .83.67 1.5 1.5 1.5S11 23.33 11 22.5V19h2v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h1c.55 0 1-.45 1-1V8H6v10zM3.5 8C2.67 8 2 8.67 2 9.5v7c0 .83.67 1.5 1.5 1.5S5 17.33 5 16.5v-7C5 8.67 4.33 8 3.5 8zm17 0c-.83 0-1.5.67-1.5 1.5v7c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-7c0-.83-.67-1.5-1.5-1.5zm-4.97-5.84 1.3-1.3a.496.496 0 0 0-.71-.71l-1.48 1.48A5.84 5.84 0 0 0 12 1.5c-.77 0-1.5.15-2.12.42L8.4.44a.496.496 0 0 0-.71.71l1.3 1.3C7.89 3.3 7 4.84 7 6.5h10c0-1.66-.89-3.2-2.47-4.34zM10 5H9V4h1v1zm5 0h-1V4h1v1z"/>
+        </svg>
+        <span>Download Android app</span>
+      </a>
     </div>
 
-    <a
-      href="https://store.steampowered.com/app/2378900/The_Coffin_of_Andy_and_Leyley/"
-      target="_blank"
-      rel="noopener"
-      class="steam-buy-card"
-    >
-      <img
-        class="steam-header-img"
-        src="img/tcoaal-steam-header.jpg"
-        alt="The Coffin of Andy and Leyley"
-        loading="lazy"
-      />
-      <span class="steam-buy-label">Buy on Steam</span>
-    </a>
+    <div class="buy-stack">
+      <a
+        href="https://store.steampowered.com/app/2378900/The_Coffin_of_Andy_and_Leyley/"
+        target="_blank"
+        rel="noopener"
+        class="steam-buy-card"
+      >
+        <img
+          class="steam-header-img"
+          src="img/tcoaal-steam-header.jpg"
+          alt="The Coffin of Andy and Leyley"
+          loading="lazy"
+        />
+        <span class="steam-buy-label">Buy on Steam</span>
+      </a>
+      <a
+        href="https://github.com/sponsors/Kidev"
+        target="_blank"
+        rel="noopener"
+        class="donate-card"
+      >
+        <svg class="donate-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="m12 21.35-.94-.86C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-9.06 11.99L12 21.35z"
+          />
+        </svg>
+        <span class="donate-label">Donate to tcoaal.app</span>
+      </a>
+    </div>
 
     <!-- Small-screen back button, pinned to the viewport (outside .wrap so the
          page transform doesn't drag it). Hidden on desktop, where the in-rail
@@ -7185,10 +7713,26 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         return navigator.standalone === true;
       }
 
+      // Every copy of a top-links control: the loader's own, plus the modding
+      // view's, which lives in a shadow root that document queries cannot see
+      // (same reason __wireFeedbackLinks is handed MOD_ROOT explicitly).
+      // Queried by class, not id, since ids do not cross the shadow boundary.
+      function topLinkCopies(selector) {
+        var out = [];
+        var push = function (root) {
+          if (!root) return;
+          Array.prototype.push.apply(out, root.querySelectorAll(selector));
+        };
+        push(document);
+        push(window.MOD_ROOT);
+        return out;
+      }
+
       function setInstallStepVisible(visible) {
         if (isRunningInstalled()) visible = false;
-        var link = document.getElementById("install-link");
-        if (link) link.style.display = visible ? "flex" : "none";
+        topLinkCopies(".install-link").forEach(function (link) {
+          link.style.display = visible ? "flex" : "none";
+        });
       }
       window.addEventListener("beforeinstallprompt", function (e) {
         e.preventDefault();
@@ -7226,8 +7770,9 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             return /\.apk$/i.test(a.name || "");
           });
           if (!apk) return;
-          var btn = document.getElementById("android-link");
-          if (btn) btn.href = apk.browser_download_url;
+          topLinkCopies(".android-link").forEach(function (btn) {
+            btn.href = apk.browser_download_url;
+          });
         } catch (e) {}
       })();
 
