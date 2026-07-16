@@ -2247,6 +2247,59 @@
     });
   }
 
+  /**
+   * Count one download of modId against Cloudflare Web Analytics by loading
+   * its tracking page (/dl/{modId}.html, generated at deploy time by
+   * tools/generate-dl-pages.js). The per-mod page turns the "top pages"
+   * report into a per-mod download report.
+   *
+   * It has to be an iframe, not a fetch: Web Analytics on automatic setup
+   * injects its beacon into the HTML at the edge, and the beacon only counts
+   * a view when it EXECUTES. A fetch would pull the page down, beacon and
+   * all, and run nothing: no count, no error, no way to notice.
+   *
+   * Call only for user-initiated installs (the Mods menu and the Language
+   * menu), never for the automatic translation pulls in
+   * ensureTranslationsFor/ensureBaseFallbackInstalled: one overhaul install
+   * fires a burst of those, which would inflate the counts into noise.
+   *
+   * Best-effort by design: the install already succeeded by the time we get
+   * here, so nothing this does may surface an error to the caller.
+   */
+  function trackModDownload(modId) {
+    try {
+      if (!modId) return;
+      if (typeof document === "undefined") return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        return;
+      }
+
+      var frame = document.createElement("iframe");
+      frame.style.display = "none";
+      frame.setAttribute("aria-hidden", "true");
+
+      var done = false;
+      var remove = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(tid);
+        if (frame.parentNode) frame.parentNode.removeChild(frame);
+      };
+      // Drop the frame once the beacon has had its chance to fire, and again
+      // on a timer so a hung load can't leak the node.
+      var tid = setTimeout(remove, 10000);
+      frame.onload = function () {
+        setTimeout(remove, 1000);
+      };
+      frame.onerror = remove;
+
+      frame.src = "/dl/" + encodeURIComponent(modId) + ".html";
+      document.body.appendChild(frame);
+    } catch (e) {
+      // Never let tracking break an install that already worked.
+    }
+  }
+
   function installMod(modId, basePath, onProgress, onDone, onError) {
     if (!basePath) {
       if (onError) onError("No mod path configured");
@@ -6091,6 +6144,7 @@
               _modStatus[mod.key].version = d.version || "";
               _modStatus[mod.key]._downloading = false;
               self._installing = null;
+              trackModDownload(mod.key);
               if (isPluginType(mod.type)) {
                 setPluginActive(mod.key, true);
                 loadPluginMod(mod.key, function () {
@@ -7198,6 +7252,7 @@
         function () {
           _modStatus[L.key].installed = true;
           _modStatus[L.key]._downloading = false;
+          trackModDownload(L.key);
           apply();
         },
         function () {

@@ -63,6 +63,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Generate mod download-tracking pages
+        run: node tools/generate-dl-pages.js _site
+
       - name: Minify and stamp
         run: |
           for f in _site/*.html; do
