@@ -153,6 +153,25 @@ function transformNote(note, fn) {
   });
 }
 
+// OrangeOverlay_AlteredByChancer's runtime plugin-command syntax (as opposed to
+// the map-note tags above): a code-356 "Plugin Command" event whose single
+// parameters[0] string is "Overlay <type> <filename> ...", e.g.
+// "Overlay ground ground88" or "Overlay fog fog1 100 10 0 0 20". All layer
+// types resolve to img/parallaxes here (never img/overlays/<type>s) because
+// this game ships OrangeOverlay with "Organized Folders": "false", so
+// Spriteset_Map.prototype.loadBitmap falls back to ImageManager.loadParallax
+// regardless of layer type. "fadeout"/"removefog" reference no file and are
+// not matched.
+const OVERLAY_CMD_RE =
+  /^(overlay)(\s+)(ground|par|light|shadow|addfog|fog)(\s+)(\S+)/i;
+function transformOverlayCommand(text, fn) {
+  if (typeof text !== "string" || !text) return text;
+  return text.replace(OVERLAY_CMD_RE, (full, cmd, sp1, type, sp2, value) => {
+    const next = fn("img/parallaxes", value, { kind: JSON.stringify([text]) });
+    return next === value ? full : cmd + sp1 + type + sp2 + next;
+  });
+}
+
 // RPG Maker MV event-command asset references, by command code. Each entry says
 // which positional parameter holds the reference and which directory it targets;
 // "audio" means the parameter is an {name,volume,pitch,pan} object.
@@ -223,6 +242,9 @@ function transformDoc(doc, fn) {
     if (!node || typeof node !== "object") return;
 
     if (typeof node.code === "number" && Array.isArray(node.parameters)) {
+      if (node.code === 356 && typeof node.parameters[0] === "string") {
+        node.parameters[0] = transformOverlayCommand(node.parameters[0], fn);
+      }
       const specs = COMMAND_REFS[node.code];
       if (specs) {
         // The literal parameters array, exactly as it appears in the Map

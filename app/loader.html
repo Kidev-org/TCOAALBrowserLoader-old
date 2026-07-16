@@ -1195,6 +1195,22 @@
       .confirm-dialog.wipe-saves .wipe-copy {
         display: inline;
       }
+      /* Contact dialog: .can-share is set when the platform can actually
+         attach a file for the user (Web Share with files), which changes both
+         the instructions and whether the share button exists. */
+      .confirm-dialog .share-copy,
+      .confirm-dialog #btn-feedback-share {
+        display: none;
+      }
+      .confirm-dialog.can-share .manual-copy {
+        display: none;
+      }
+      .confirm-dialog.can-share .share-copy {
+        display: inline;
+      }
+      .confirm-dialog.can-share #btn-feedback-share {
+        display: inline-block;
+      }
       .confirm-saves-msg {
         font-size: clamp(12px, 1vmin, 14px);
         text-align: center;
@@ -1720,9 +1736,41 @@
           var d = [107, 105, 100, 101, 118, 46, 111, 114, 103]
             .map(function (c) { return String.fromCharCode(c); })
             .join("");
-          var url = "mailto:" + u + "@" + d;
-          var links = document.querySelectorAll("[data-feedback-link]");
-          for (var i = 0; i < links.length; i++) links[i].href = url;
+          window.__contactAddress = u + "@" + d;
+
+          // Clicking a contact link runs the two-step flow in the outer
+          // script (startFeedbackFlow): pack the reporter's saves + report
+          // into one zip and download it, then open a dialog that names the
+          // file and asks for it to be attached. Until that handler is
+          // defined the href alone still opens an empty draft, so the link
+          // works during page load and with JS disabled.
+          function prewarm() {
+            if (window.__prewarmFeedbackFiles) window.__prewarmFeedbackFiles();
+          }
+          function onClick(ev) {
+            if (!window.__sendFeedbackEmail) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            window.__sendFeedbackEmail(ev.currentTarget);
+          }
+          // Exposed so the modding view can wire its own in-shadow copy of the
+          // link stack, which document.querySelectorAll cannot reach.
+          window.__wireFeedbackLinks = function (links) {
+            for (var i = 0; i < links.length; i++) {
+              var a = links[i];
+              a.href = "mailto:" + window.__contactAddress;
+              // Start building the attachments before the click lands, so the
+              // share sheet can open inside the click's user-activation window
+              // instead of after an await (which Safari rejects outright).
+              a.addEventListener("pointerenter", prewarm);
+              a.addEventListener("pointerdown", prewarm);
+              a.addEventListener("focus", prewarm);
+              a.addEventListener("click", onClick);
+            }
+          };
+          window.__wireFeedbackLinks(
+            document.querySelectorAll("[data-feedback-link]"),
+          );
         })();
       </script>
 
@@ -2098,6 +2146,59 @@
               Try again
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2 of the contact flow: the saves + report zip has already been
+         downloaded, and this explains that it has to be attached by hand (a
+         mailto: link cannot carry an attachment) before handing the user off
+         to their mail client.
+
+         Body-level, NOT inside .overlay: both the modding view and the #report
+         route hide .overlay, and the modding view has its own contact link, so
+         a dialog nested in .overlay would download the zip and then never
+         appear. z-index 50 keeps it above #modding-host and #report-panel,
+         which both stack at auto. -->
+    <div class="confirm-dialog" id="feedback-dialog">
+      <div class="confirm-dialog-content">
+        <h2>Attach to your email</h2>
+        <p>
+          Your saves and a diagnostic report were packed into
+          <strong id="feedback-filename"></strong> and downloaded.
+        </p>
+        <p>
+          <span class="manual-copy">Please
+          <strong>attach it from your downloads folder</strong> to the
+          email in the page that opens next.</span>
+          <span class="share-copy"><strong>Attach and send</strong> hands the
+          file straight to your mail app. Otherwise, attach it by hand from
+          your downloads folder to the message that opens next.</span>
+        </p>
+        <p class="confirm-saves-msg" id="feedback-contents"></p>
+        <p class="confirm-saves-status" id="feedback-status"></p>
+        <div class="confirm-actions">
+          <button
+            class="action-btn success"
+            id="btn-feedback-share"
+            onclick="shareFeedbackZip()"
+          >
+            Attach and send
+          </button>
+          <button
+            class="action-btn success"
+            id="btn-feedback-send"
+            onclick="sendFeedbackMail()"
+          >
+            Send email
+          </button>
+          <button
+            class="action-btn secondary"
+            id="btn-feedback-cancel"
+            onclick="hideFeedbackDialog()"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -6672,6 +6773,45 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           : null;
       }
 
+      // Pack collectSaveEntries() output into a .zip. Each entry is the raw
+      // localStorage value (LZString-compressed RPG Maker save text) under its
+      // canonical .rpgsave name, so the archive is interchangeable with native
+      // RPG Maker MV saves.
+      // [{key, value}] -> buildZip() entries, optionally under a subdirectory.
+      function saveZipEntries(saves, dir) {
+        const encoder = new TextEncoder();
+        return saves.map((s) => ({
+          name: (dir || "") + saveBackupFilename(s.key),
+          data: encoder.encode(s.value),
+        }));
+      }
+
+      function buildSavesZip(saves) {
+        return buildZip(saveZipEntries(saves, ""));
+      }
+
+      // Local-time date + hour (HHhMM): sortable, unambiguous, and safe on all
+      // OSes (no colons, no dots).
+      function exportStamp() {
+        const d = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        return (
+          d.getFullYear() +
+          "-" +
+          pad(d.getMonth() + 1) +
+          "-" +
+          pad(d.getDate()) +
+          "-" +
+          pad(d.getHours()) +
+          "h" +
+          pad(d.getMinutes())
+        );
+      }
+
+      function savesZipFilename() {
+        return "TCOAAL-saves-" + exportStamp() + ".zip";
+      }
+
       function downloadSavesZip() {
         const $status = document.getElementById("confirm-saves-status");
         const saves = collectSaveEntries();
@@ -6683,28 +6823,8 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           return;
         }
         try {
-          const encoder = new TextEncoder();
-          const files = saves.map((s) => ({
-            name: saveBackupFilename(s.key),
-            data: encoder.encode(s.value),
-          }));
-
-          const zip = buildZip(files);
-          // Local-time date + hour (HHhMM): sortable, unambiguous,
-          // and safe on all OSes (no colons, no dots).
-          const d = new Date();
-          const pad = (n) => String(n).padStart(2, "0");
-          const ts =
-            d.getFullYear() +
-            "-" +
-            pad(d.getMonth() + 1) +
-            "-" +
-            pad(d.getDate()) +
-            "-" +
-            pad(d.getHours()) +
-            "h" +
-            pad(d.getMinutes());
-          const filename = "TCOAAL-saves-" + ts + ".zip";
+          const zip = buildSavesZip(saves);
+          const filename = savesZipFilename();
           const bridge = androidExportBridge();
           if (bridge) {
             bridge.exportFile(uint8ToBase64(zip), filename, "application/zip");
@@ -6740,6 +6860,289 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           }
         }
       }
+
+      // Contact / feedback flow
+      //
+      // A bug report is useless without the reporter's saves and a picture of
+      // their setup, but a mailto: URL cannot carry an attachment: RFC 6068
+      // permits only to/cc/bcc/subject/body/keywords, and the old "attach="
+      // extension is ignored or stripped everywhere. So the flow is two steps:
+      //
+      //   1. Click contact -> pack saves + report into ONE zip and download it.
+      //      One file, not two, so the browser never raises its "allow multiple
+      //      downloads?" prompt, and the user has one obvious thing to attach.
+      //   2. A dialog names that file, then hands off to the mail client by
+      //      one of two routes:
+      //        "Attach and send" - Web Share, which really does attach the zip.
+      //                            Only shown where the platform can do it
+      //                            (mobile, Chrome on Windows/ChromeOS).
+      //        "Send email"      - a plain mailto: draft naming the zip, for
+      //                            the user to attach by hand. Always present.
+      //
+      // Why share() is offered ONLY from that dialog button and never from the
+      // contact link itself: share() requires transient user activation, and
+      // building the report has to await an IDB scan first, so a share() on the
+      // link's own click would fire after the activation had lapsed - Safari
+      // rejects exactly that with NotAllowedError, and it would break on the
+      // platform where attaching by hand is most awkward. By the time the
+      // dialog is up the zip is already built and in memory, so its button can
+      // call share() synchronously inside its own click with the activation
+      // still live. The download + mailto: route has no activation gate at all
+      // and stays available everywhere as the fallback.
+      //
+      // The send is always the user's own action in their own mail client;
+      // nothing here transmits saves or diagnostics on its own.
+
+      const FEEDBACK_SUBJECT = "TCOAAL Browser Player: feedback / issue report";
+
+      // Returns { name, bytes, parts } for a single zip, or null when there is
+      // nothing at all to send. Each source is independently best-effort: a
+      // dead IDB should still send the saves, and a wiped install should still
+      // send the report that explains it is wiped. `parts` describes what
+      // actually made it in, for the dialog to show.
+      async function buildFeedbackZip() {
+        const entries = [];
+        const parts = [];
+
+        try {
+          const saves = collectSaveEntries();
+          if (saves.length > 0) {
+            // Under saves/ so they stay recognisable next to report.txt and
+            // keep the same layout as the standalone save backup.
+            entries.push(...saveZipEntries(saves, "saves/"));
+            parts.push(
+              saves.length + " save file" + (saves.length === 1 ? "" : "s"),
+            );
+          }
+        } catch (err) {
+          console.warn("[loader] Feedback: save export failed:", err);
+        }
+
+        try {
+          const model = await buildReportModel();
+          const text = reportToText(model, diagnose(model));
+          entries.push({
+            name: "report.txt",
+            data: new TextEncoder().encode(text),
+          });
+          parts.push("a diagnostic report");
+        } catch (err) {
+          console.warn("[loader] Feedback: report build failed:", err);
+        }
+
+        if (entries.length === 0) return null;
+        return {
+          name: "TCOAAL-feedback-" + exportStamp() + ".zip",
+          bytes: buildZip(entries),
+          parts: parts,
+        };
+      }
+
+      // Cached so the pointerdown/hover prewarm is what the click consumes.
+      // Purely responsiveness: the report build scans IDB, and no correctness
+      // now depends on finishing inside an activation window (see above), so a
+      // cold click is slow but never broken. Short TTL because an import or a
+      // wipe between prewarm and click would otherwise attach a stale report.
+      var _feedbackZip = null;
+      var FEEDBACK_CACHE_MS = 30000;
+
+      function feedbackZip() {
+        const now = Date.now();
+        if (!_feedbackZip || now - _feedbackZip.at > FEEDBACK_CACHE_MS) {
+          _feedbackZip = { at: now, promise: buildFeedbackZip() };
+        }
+        return _feedbackZip.promise;
+      }
+
+      window.__prewarmFeedbackFiles = function () {
+        // Swallow rejections: the click path awaits the same promise and
+        // reports properly. This only exists to warm the cache.
+        feedbackZip().catch(function () {});
+      };
+
+      function downloadFeedbackZip(zip) {
+        const bridge = androidExportBridge();
+        if (bridge) {
+          const b64 = uint8ToBase64(zip.bytes);
+          bridge.exportFile(b64, zip.name, "application/zip");
+          return;
+        }
+        const blob = new Blob([zip.bytes], { type: "application/zip" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = zip.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Revoke after a delay: some browsers race the download dispatch with
+        // synchronous revocation.
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 30000);
+      }
+
+      // The zip the dialog is currently talking about: "Send email" names it in
+      // the draft body, and "Attach and send" shares these very bytes.
+      var _feedbackZipShown = null;
+
+      // A fresh File each time: File is cheap over an existing Uint8Array, and
+      // holding one alive across the dialog's lifetime buys nothing.
+      function feedbackZipFile(zip) {
+        try {
+          return new File([zip.bytes], zip.name, { type: "application/zip" });
+        } catch (err) {
+          return null; // No File constructor: share is not an option anyway.
+        }
+      }
+
+      // Whether this platform can attach the zip for the user. Must be probed
+      // with the real file: canShare({files}) is false on desktop Chrome/Linux
+      // and undefined in the Android WebView, both of which then use mailto:.
+      function canShareFeedbackZip(zip) {
+        const file = feedbackZipFile(zip);
+        if (!file) return false;
+        if (!navigator.canShare) return false;
+        try {
+          return !!navigator.canShare({ files: [file] });
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function setFeedbackStatus(text, kind) {
+        const $s = document.getElementById("feedback-status");
+        if (!$s) return;
+        $s.textContent = text || "";
+        $s.className = "confirm-saves-status" + (kind ? " " + kind : "");
+      }
+
+      function showFeedbackDialog(zip) {
+        _feedbackZipShown = zip;
+        const $name = document.getElementById("feedback-filename");
+        if ($name) $name.textContent = zip.name;
+        const $contents = document.getElementById("feedback-contents");
+        if ($contents) {
+          $contents.textContent =
+            "It contains " +
+            listPhrase(zip.parts) +
+            ". Open it first if you want to check what you are sending.";
+        }
+        setFeedbackStatus("");
+        const shareable = canShareFeedbackZip(zip);
+        const $d = document.getElementById("feedback-dialog");
+        if ($d) {
+          $d.classList.toggle("can-share", shareable);
+          $d.classList.add("visible");
+        }
+        // Focus whichever route is the primary one on this platform.
+        const $primary = document.getElementById(
+          shareable ? "btn-feedback-share" : "btn-feedback-send",
+        );
+        if ($primary) $primary.focus();
+      }
+
+      function hideFeedbackDialog() {
+        const $d = document.getElementById("feedback-dialog");
+        if ($d) $d.classList.remove("visible");
+      }
+
+      // Step 2, share route. Called straight from the button's click handler:
+      // nothing is awaited before navigator.share(), so the transient user
+      // activation share() demands is still live. This is the entire reason the
+      // share lives on this button and not on the contact link (see above) - do
+      // not make this function await anything before the share() call.
+      async function shareFeedbackZip() {
+        const zip = _feedbackZipShown;
+        if (!zip) return;
+        const file = feedbackZipFile(zip);
+        if (!file) return;
+        try {
+          await navigator.share({
+            title: FEEDBACK_SUBJECT,
+            text:
+              "Describe the issue or feedback here.\n\n" +
+              "Attached: saves and a diagnostic report from " +
+              "TCOAAL Browser Player.\n",
+            files: [file],
+          });
+          hideFeedbackDialog();
+        } catch (err) {
+          // The user backing out of the share sheet is not an error: leave the
+          // dialog up so they can pick a route again.
+          if (err && err.name === "AbortError") return;
+          console.warn("[loader] Feedback: share failed:", err);
+          // The zip is already downloaded, so the manual route still works.
+          setFeedbackStatus(
+            "Could not hand the file to another app. Use Send email and " +
+              "attach " +
+              zip.name +
+              " by hand.",
+            "err",
+          );
+        }
+      }
+
+      // ["3 save files", "a diagnostic report"] -> "3 save files and a
+      // diagnostic report".
+      function listPhrase(items) {
+        if (items.length === 0) return "nothing";
+        if (items.length === 1) return items[0];
+        const last = items[items.length - 1];
+        return items.slice(0, -1).join(", ") + " and " + last;
+      }
+
+      function mailtoUrl(subject, body) {
+        return (
+          "mailto:" +
+          window.__contactAddress +
+          "?subject=" +
+          encodeURIComponent(subject) +
+          "&body=" +
+          encodeURIComponent(body)
+        );
+      }
+
+      function sendFeedbackMail() {
+        hideFeedbackDialog();
+        let body = "Describe the issue or feedback here.\n\n\n";
+        if (_feedbackZipShown) {
+          body +=
+            "----\n" +
+            "Please attach " +
+            _feedbackZipShown.name +
+            " from your downloads folder.\n" +
+            "It holds the saves and diagnostics needed to reproduce this.\n";
+        }
+        window.location.href = mailtoUrl(FEEDBACK_SUBJECT, body);
+      }
+
+      // Step 1: build + download the zip, then hand off to the dialog.
+      async function startFeedbackFlow(linkEl) {
+        const $label = linkEl && linkEl.querySelector("span");
+        const restore = $label ? $label.textContent : null;
+        if ($label) $label.textContent = "Preparing attachment...";
+        try {
+          const zip = await feedbackZip();
+          if (!zip) {
+            // Nothing to attach (no saves, and the report could not be built).
+            // An empty draft still reaches a human.
+            _feedbackZipShown = null;
+            sendFeedbackMail();
+            return;
+          }
+          downloadFeedbackZip(zip);
+          showFeedbackDialog(zip);
+        } catch (err) {
+          // Never trap the user behind a broken attachment build.
+          console.error("[loader] Feedback: attachment build failed:", err);
+          _feedbackZipShown = null;
+          sendFeedbackMail();
+        } finally {
+          if ($label && restore != null) $label.textContent = restore;
+        }
+      }
+      window.__sendFeedbackEmail = startFeedbackFlow;
 
       // Init: dual-mode UI.
       //   Empty IDB  -> show import button (default state).
@@ -6877,13 +7280,19 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
             if (e.target === $confirm) hideConfirmClearDialog();
           });
         }
+        const $feedback = document.getElementById("feedback-dialog");
+        if ($feedback) {
+          $feedback.addEventListener("click", (e) => {
+            if (e.target === $feedback) hideFeedbackDialog();
+          });
+        }
         document.addEventListener("keydown", (e) => {
-          if (
-            e.key === "Escape" &&
-            $confirm &&
-            $confirm.classList.contains("visible")
-          ) {
+          if (e.key !== "Escape") return;
+          if ($confirm && $confirm.classList.contains("visible")) {
             hideConfirmClearDialog();
+          }
+          if ($feedback && $feedback.classList.contains("visible")) {
+            hideFeedbackDialog();
           }
         });
 
@@ -11057,21 +11466,12 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
         },
       };
 
-      // Resolve the in-shadow contact link (the loader's global resolver
-      // cannot reach into the shadow root). Built from char codes so the
-      // address isn't sitting in the page source as scrapeable plain text.
-      (function () {
-        var u = [112, 117, 98, 108, 105, 99]
-          .map(function (c) { return String.fromCharCode(c); })
-          .join("");
-        var d = [107, 105, 100, 101, 118, 46, 111, 114, 103]
-          .map(function (c) { return String.fromCharCode(c); })
-          .join("");
-        var url = "mailto:" + u + "@" + d;
-        MOD_ROOT.querySelectorAll("[data-feedback-link]").forEach(function (a) {
-          a.href = url;
-        });
-      })();
+      // Resolve the in-shadow contact link: the loader's own resolver ran over
+      // document.querySelectorAll, which cannot see into the shadow root, so
+      // hand it this copy explicitly. Same href + attachment behaviour.
+      window.__wireFeedbackLinks(
+        MOD_ROOT.querySelectorAll("[data-feedback-link]"),
+      );
       })();
     </script>
 
