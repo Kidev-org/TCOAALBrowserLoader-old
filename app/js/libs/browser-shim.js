@@ -241,6 +241,7 @@
   // keys, scoped per save slot (and thus per active mod).
 
   // Map id -> episode label. Ranges mirror the game's chapter/map layout.
+  // Credits to https://github.com/PA3MA3AH/better-saves for the function
   function detectEpisode(mapId) {
     mapId = parseInt(mapId, 10) || 0;
     if (mapId >= 3 && mapId <= 18) return "Episode 1";
