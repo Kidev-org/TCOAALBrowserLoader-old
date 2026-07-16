@@ -1526,9 +1526,11 @@
         display: inline-block;
       }
 
-      /* Persistent "Update available" chip. Hidden until the Android update
-         check flags a newer release (body.has-app-update); app-only, top-right,
-         where the mobile bottom link bar leaves the corner clear. */
+      /* Persistent "Update available" chip. Shown on EVERY launch while an
+         update is available (body.has-app-update, set from cache before the
+         once-a-day network check); only the popup dialog is throttled. App-only,
+         top-right in portrait, bottom-right in landscape (see media query
+         below), where the mobile link bar leaves the corner clear. */
       #app-update-badge {
         display: none;
       }
@@ -1556,6 +1558,15 @@
         height: 16px;
         fill: currentColor;
         flex: 0 0 auto;
+      }
+      /* Landscape phone (width > height): the top-right corner is cramped and
+         often under the camera cutout, so drop the chip to the bottom-right. */
+      @media (orientation: landscape) {
+        body.android-app.has-app-update #app-update-badge {
+          top: auto;
+          bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+          right: calc(10px + env(safe-area-inset-right, 0px));
+        }
       }
 
       /* Off-screen content for SEO / screen readers. Kept out of the visual
@@ -1942,12 +1953,12 @@
       /* Android portrait: keep the screen's horizontal centre clear for the
          system navigation gesture / button. Drop the GitHub chip and split the
          four remaining icons into two edge-hugging pairs (tool + feedback on the
-         left, steam + donate on the right), with a safe margin from the rounded
-         phone corners. */
+         left, steam + donate on the right). Inset each pair by one full chip
+         width (~44px) so neither is swallowed by the phone's rounded corners. */
       @media (orientation: portrait) {
         body.android-app .top-links {
-          padding-left: max(16px, env(safe-area-inset-left, 0px));
-          padding-right: max(16px, env(safe-area-inset-right, 0px));
+          padding-left: max(clamp(44px, 12vw, 64px), env(safe-area-inset-left, 0px));
+          padding-right: max(clamp(44px, 12vw, 64px), env(safe-area-inset-right, 0px));
         }
         body.android-app .top-links .github-link {
           display: none !important;
