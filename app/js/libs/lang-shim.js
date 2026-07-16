@@ -2251,10 +2251,14 @@
   // first load resolves; the menu simply draws no count while it is null, so
   // a slow or failed fetch costs nothing but the label.
   var _installCounts = null;
-  var _installCountsAt = 0;
-  // Counts move slowly and are edge-cached for ~5min anyway, so a refetch
-  // within this window would only burn a request to redraw the same numbers.
-  var INSTALL_COUNTS_TTL_MS = 5 * 60 * 1000;
+  // Read exactly once per session. After a successful load the number is kept
+  // live purely locally: trackModInstall does a +1 on the install it just
+  // performed, so re-reading the API would only spend a request to redraw a
+  // number we already track. These flags coalesce concurrent callers onto the
+  // single fetch and make every later call (each Mods menu open) a no-op.
+  var _installCountsLoaded = false;
+  var _installCountsInFlight = false;
+  var _installCountsWaiters = [];
   var INSTALL_COUNTS_KEY = "__install_counts__";
   // Mods this browser has already counted. Deliberately NOT cleared by
   // uninstallMod: surviving an uninstall is the whole point.
@@ -2383,6 +2387,63 @@
     }
   }
 
+  // One-time migration for users who adopted mods BEFORE install counting
+  // existed: their active overhaul, enabled plugins, active language and any
+  // downloaded (installed) mods were never counted. On the next few online
+  // boots, count each once so the totals reflect the real installed base.
+  //
+  // Safe to run repeatedly: trackModInstall de-dupes per browser via
+  // _countedMods, so anything already counted (including everything installed
+  // AFTER this update) is an instant no-op. The tries cap only bounds the
+  // background IDB scan and gives rate-limited (429) POSTs a couple of
+  // retries -- a per-IP limiter can defer a user with many mods, and those
+  // roll back in _countedMods, so a later boot picks them up. After the cap
+  // we stop: these are popularity figures, and a rare off-by-one for a power
+  // user with several overhauls is acceptable (see trackModInstall).
+  var INSTALL_BACKFILL_KEY = "_countBackfillTries";
+  var INSTALL_BACKFILL_MAX_TRIES = 3;
+
+  function backfillInstallCounts() {
+    // Offline: counting is meaningless and would waste a try. Retry next boot.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    var tries = 0;
+    try {
+      tries = parseInt(localStorage.getItem(INSTALL_BACKFILL_KEY) || "0", 10);
+    } catch (e) {}
+    if (!(tries >= 0)) tries = 0;
+    if (tries >= INSTALL_BACKFILL_MAX_TRIES) return;
+
+    // Active adoptions, known without touching IDB. getActiveMod() is the
+    // active overhaul (null for base game); guard against a stray translation
+    // id so a language is only ever counted via _activeLang below (as a
+    // "user", matching the activation-not-download rule in trackModInstall).
+    var am = getActiveMod();
+    if (am && !isTranslationModId(am)) trackModInstall(am);
+    for (var i = 0; i < _activePlugins.length; i++) {
+      trackModInstall(_activePlugins[i]);
+    }
+    if (_activeLang) trackModInstall(_activeLang);
+
+    // Downloaded-but-maybe-inactive overhauls/plugins. getModList() excludes
+    // translations, so auto-fetched languages are never counted here -- only
+    // the active one above. fetchAllModStatus fills _modStatus from IDB.
+    fetchAllModStatus(function () {
+      var mods = getModList();
+      for (var j = 0; j < mods.length; j++) {
+        var k = mods[j].key;
+        if (_modStatus[k] && _modStatus[k].installed) trackModInstall(k);
+      }
+      // Only spend a try once we actually had the list to scan, so a boot
+      // where _modsData was not ready yet doesn't burn an attempt (or worse,
+      // permanently skip the installed set).
+      if (mods.length > 0) {
+        try {
+          localStorage.setItem(INSTALL_BACKFILL_KEY, String(tries + 1));
+        } catch (e) {}
+      }
+    });
+  }
+
   /**
    * "1,204 installs", or "1,204 users" for a translation.
    *
@@ -2410,24 +2471,48 @@
   }
 
   /**
-   * Load every mod's install count from the counter Worker, falling back to
-   * the last set we cached in IDB so the menu still shows numbers offline (or
-   * if the Worker is down). Caches each fresh set on the way through.
+   * Load every mod's install count from the counter Worker ONCE per session,
+   * falling back to the last set cached in IDB when offline or the Worker is
+   * down. After a successful read the counts stay in memory and are kept live
+   * by trackModInstall's local +1; callers (each Mods menu open) reuse them
+   * with no further network. A failed load leaves _installCountsLoaded false so
+   * a later call can retry (e.g. offline at boot, online by the first menu
+   * open).
    *
-   * done() runs whether or not anything was found: callers just redraw.
+   * done() runs whether or not anything was found: callers just redraw. When a
+   * fetch is already in flight, done is queued and fired when it settles, so
+   * two near-simultaneous callers (boot warm-load + menu open) still make a
+   * single request.
    */
   function loadInstallCounts(done) {
     done = done || function () {};
-    var now = Date.now();
-    if (_installCounts && now - _installCountsAt < INSTALL_COUNTS_TTL_MS) {
+    if (_installCountsLoaded) {
       done();
       return;
     }
+    _installCountsWaiters.push(done);
+    if (_installCountsInFlight) return;
+    _installCountsInFlight = true;
 
-    var fromCache = function (next) {
+    // Fire every queued caller's done() once, then clear the queue. `loaded`
+    // records whether the network read actually succeeded: only then do we
+    // stop reading for the rest of the session.
+    var settle = function (loaded) {
+      _installCountsInFlight = false;
+      if (loaded) _installCountsLoaded = true;
+      var waiters = _installCountsWaiters;
+      _installCountsWaiters = [];
+      for (var i = 0; i < waiters.length; i++) {
+        try {
+          waiters[i]();
+        } catch (e) {}
+      }
+    };
+
+    var fromCache = function (loaded) {
       openAssetsDb(function (db) {
         if (!db) {
-          next();
+          settle(loaded);
           return;
         }
         getAssetMain(db, INSTALL_COUNTS_KEY, function (raw) {
@@ -2436,13 +2521,13 @@
               _installCounts = JSON.parse(raw);
             } catch (e) {}
           }
-          next();
+          settle(loaded);
         });
       });
     };
 
     if (typeof fetch !== "function") {
-      fromCache(done);
+      fromCache(false);
       return;
     }
 
@@ -2460,9 +2545,8 @@
     // entry keeps whatever headers an earlier Worker stored it under). Reading
     // it stale then writes {} back over the IDB fallback, so the menu shows no
     // counts. Bypass the browser cache entirely: Cloudflare's edge cache
-    // (s-maxage) is what actually shields D1, and the in-memory memo
-    // (_installCountsAt) already stops repeat fetches within a session. This
-    // also self-heals users who cached the empty {}: their next fetch skips it.
+    // (s-maxage) is what shields D1, and we read only once per session anyway.
+    // This also self-heals users who cached the empty {}: the read skips it.
     var opts = { cache: "no-store" };
     if (ctrl) opts.signal = ctrl.signal;
 
@@ -2474,18 +2558,17 @@
       })
       .then(function (data) {
         _installCounts = data || {};
-        _installCountsAt = Date.now();
         openAssetsDb(function (db) {
           if (db)
             putAsset(db, INSTALL_COUNTS_KEY, JSON.stringify(_installCounts));
-          done();
+          settle(true);
         });
       })
       .catch(function () {
         if (tid) clearTimeout(tid);
         // Offline, Worker down, or not deployed yet: show the last numbers we
-        // saw rather than nothing.
-        fromCache(done);
+        // saw rather than nothing, and stay "unloaded" so a later call retries.
+        fromCache(false);
       });
   }
 
@@ -2641,6 +2724,19 @@
     });
   }
 
+  // Update a mod's installed/commit fields WITHOUT discarding the object, so
+  // any transient in-flight-download state on it (_downloading, _percent,
+  // _percentShown, _progress, _error -- set by the install flow) survives a
+  // status refresh. Rebuilding the object here was the bug behind a background
+  // download reading as "Not installed" on re-entry to the Mods menu, which in
+  // turn re-opened the install gate and let a second, racing download start.
+  function setModInstalledState(modId, installed, commit) {
+    var st = _modStatus[modId] || (_modStatus[modId] = {});
+    st.installed = installed;
+    st.commit = commit || "";
+    return st;
+  }
+
   function checkModInstalled(modId, callback) {
     openAssetsDb(function (db) {
       if (!db) {
@@ -2651,14 +2747,14 @@
         if (val) {
           try {
             var meta = typeof val === "string" ? JSON.parse(val) : val;
-            _modStatus[modId] = { installed: true, commit: meta.commit || "" };
+            setModInstalledState(modId, true, meta.commit || "");
             callback(true, meta);
           } catch (e) {
-            _modStatus[modId] = { installed: true, commit: "" };
+            setModInstalledState(modId, true, "");
             callback(true, null);
           }
         } else {
-          _modStatus[modId] = { installed: false, commit: "" };
+          setModInstalledState(modId, false, "");
           callback(false, null);
         }
       });
@@ -6248,7 +6344,10 @@
       }
 
       if (!installed) {
-        if (this._installing) {
+        if (_modStatus[mod.key] && _modStatus[mod.key]._downloading) {
+          // Already downloading in the background (possibly started in an
+          // earlier visit to this menu). Re-selecting it is a no-op -- the row
+          // shows live progress -- so just keep the list navigable.
           this._listWindow.activate();
           return;
         }
@@ -6306,6 +6405,18 @@
       }
     };
 
+    // Refresh whichever Mods scene is currently on screen. Install runs in the
+    // background and its callbacks outlive the scene the user started it from
+    // (they can browse other rows, return to the active-mod pin, or leave the
+    // scene entirely), so a callback must never poke a torn-down window -- it
+    // targets the live Scene_Mods, if one happens to be showing.
+    function refreshModsListUI() {
+      var scene = SceneManager._scene;
+      if (!scene || !(scene instanceof window.Scene_Mods)) return;
+      if (scene._listWindow) scene._listWindow.refresh();
+      if (scene._activeModWindow) scene._activeModWindow.refresh();
+    }
+
     Scene_Mods.prototype.onConfirmYes = function () {
       this._confirmWindow.hide();
       this._confirmWindow.deactivate();
@@ -6326,31 +6437,54 @@
 
       switch (action.type) {
         case "install":
-          this._installing = mod.key;
+          // Guard against launching a duplicate download: if one is already in
+          // flight for this mod (e.g. started on an earlier visit to the menu),
+          // just refocus the list and bail. Two concurrent downloads writing
+          // the same IDB keys would fight over the shared progress bar.
+          if (_modStatus[mod.key] && _modStatus[mod.key]._downloading) {
+            this._listWindow.activate();
+            break;
+          }
           if (!_modStatus[mod.key]) _modStatus[mod.key] = {};
+          // Fire the download off in the background, then hand focus straight
+          // back to the list: the row draws its own progress (drawModRow fill +
+          // "Installing..." label, both driven by these _modStatus fields), so
+          // the menu stays fully navigable -- the user can browse other mods,
+          // hop to the active-mod pin, or leave the scene while files stream
+          // in. Progress lives on the module-global _modStatus (not this scene
+          // instance) so it survives leaving and re-entering the menu.
           _modStatus[mod.key]._downloading = true;
           _modStatus[mod.key]._progress = "Connecting...";
+          _modStatus[mod.key]._percent = 0;
+          _modStatus[mod.key]._percentShown = 0;
+          _modStatus[mod.key]._error = null;
+          this._installing = mod.key;
           this._listWindow.refresh();
+          this._listWindow.activate();
 
           installMod(
             mod.key,
             mod.path,
             function onProgress(d) {
-              _modStatus[mod.key]._progress =
-                d.message || "Installing... " + d.percent + "%";
-              self._listWindow.refresh();
+              var st = _modStatus[mod.key];
+              if (!st) return;
+              if (typeof d.percent === "number") st._percent = d.percent;
+              st._progress = d.message || "Installing... " + d.percent + "%";
+              refreshModsListUI();
             },
             function onDone(d) {
-              _modStatus[mod.key].installed = true;
-              _modStatus[mod.key].version = d.version || "";
-              _modStatus[mod.key]._downloading = false;
-              self._installing = null;
+              var st = _modStatus[mod.key];
+              st.installed = true;
+              st.version = d.version || "";
+              st._downloading = false;
+              st._percent = 100;
+              st._percentShown = 100;
+              if (self._installing === mod.key) self._installing = null;
               trackModInstall(mod.key);
               if (isPluginType(mod.type)) {
                 setPluginActive(mod.key, true);
                 loadPluginMod(mod.key, function () {
-                  self._listWindow.refresh();
-                  self._listWindow.activate();
+                  refreshModsListUI();
                 });
               } else {
                 // An overhaul's translations are bundled with it: pull every
@@ -6358,16 +6492,18 @@
                 // (and offline-capable) by the time the user enables this mod
                 // and opens its Language menu.
                 ensureTranslationsFor(mod.key);
-                self._listWindow.refresh();
-                self._listWindow.activate();
+                refreshModsListUI();
               }
+              // Do not steal focus on completion: the user may have moved to
+              // another row or the pin while the download ran. The refresh
+              // above just redraws the finished row in place.
             },
             function onError(msg) {
-              _modStatus[mod.key]._downloading = false;
-              _modStatus[mod.key]._error = msg;
-              self._installing = null;
-              self._listWindow.refresh();
-              self._listWindow.activate();
+              var st = _modStatus[mod.key];
+              st._downloading = false;
+              st._error = msg;
+              if (self._installing === mod.key) self._installing = null;
+              refreshModsListUI();
             },
           );
           break;
@@ -6604,6 +6740,40 @@
       var iconW = Math.floor((iconH * 16) / 9);
       var textX = rect.x + iconW + 8;
       var iconY = rect.y + pad;
+
+      // While this mod is downloading, the row doubles as its own progress
+      // bar: a translucent accent fills left-to-right in proportion to the
+      // install percentage, with a brighter baseline so it reads clearly even
+      // under the text. _percentShown is eased toward the real _percent by the
+      // list window's update loop, so the fill glides smoothly between the
+      // coarse steps installMod reports. Drawn first, under the icon and text.
+      var dlSt = _modStatus[mod.key];
+      if (dlSt && dlSt._downloading) {
+        var pctRaw =
+          typeof dlSt._percentShown === "number"
+            ? dlSt._percentShown
+            : typeof dlSt._percent === "number"
+              ? dlSt._percent
+              : 0;
+        var pct = Math.max(0, Math.min(100, pctRaw));
+        var fillW = Math.floor((rect.width * pct) / 100);
+        if (fillW > 0) {
+          win.contents.fillRect(
+            rect.x,
+            rect.y,
+            fillW,
+            rect.height,
+            "rgba(120,210,255,0.13)",
+          );
+          win.contents.fillRect(
+            rect.x,
+            rect.y + rect.height - 3,
+            fillW,
+            3,
+            "rgba(120,210,255,0.6)",
+          );
+        }
+      }
 
       var iconBmp = iconCache && iconCache[mod.key];
       var src =
@@ -7111,6 +7281,33 @@
       drawModRow(this, mod, rect, isActive, this._iconBitmaps, {
         showTypeTag: true,
       });
+    };
+
+    // Ease each downloading row's fill toward its real percentage so the bar
+    // glides between the coarse steps installMod reports (roughly every 20
+    // files). Only visible rows that are actually mid-animation get redrawn,
+    // so an idle Mods menu does zero per-frame work.
+    Window_ModList.prototype.update = function () {
+      Window_Selectable.prototype.update.call(this);
+      var top = this.topIndex();
+      var end = Math.min(top + this.maxPageItems(), this._mods.length);
+      for (var i = top; i < end; i++) {
+        var mod = this._mods[i];
+        if (!mod || mod.isAddCustom) continue;
+        var st = _modStatus[mod.key];
+        if (!st || !st._downloading) continue;
+        var target = typeof st._percent === "number" ? st._percent : 0;
+        var shown = typeof st._percentShown === "number" ? st._percentShown : 0;
+        if (Math.abs(target - shown) < 0.5) {
+          if (shown !== target) {
+            st._percentShown = target;
+            this.redrawItem(i);
+          }
+          continue;
+        }
+        st._percentShown = shown + (target - shown) * 0.18;
+        this.redrawItem(i);
+      }
     };
 
     // Minimal renderer for the synthetic "Add custom mod..." row. Two lines
@@ -7684,6 +7881,16 @@
     Scene_Boot.prototype.start = function () {
       applyPatches();
       loadActivePlugins();
+      // Read the install counts once, here at game entry. loadInstallCounts is
+      // load-once for the session, so the Mods menu later reuses this result
+      // instead of re-reading: installs stay live via trackModInstall's local
+      // +1. Warming it here means the numbers are ready by the time the menu
+      // opens.
+      loadInstallCounts();
+      // One-time backfill for pre-counting adopters. Deferred so it never
+      // competes with the asset-heavy boot: the POSTs are keepalive and the
+      // scan is background IDB, but there's no reason to fire them mid-boot.
+      setTimeout(backfillInstallCounts, 3000);
       return _orig_bootStart.apply(this, arguments);
     };
   }
