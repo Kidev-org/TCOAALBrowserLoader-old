@@ -2306,10 +2306,12 @@
    *
    * Counting once per browser (rather than once per install) makes the number
    * "how many people run this" instead of "how many times a file moved", which
-   * is what the Mods menu is really asking. Enable/disable never reaches here
-   * anyway: only the `!installed` branch raises the "install" action, so
-   * re-enabling a plugin or switching overhauls never counted. What this
-   * de-dupes is uninstall -> reinstall, and version updates.
+   * is what the Mods menu is really asking. For remote mods only the
+   * `!installed` install action feeds this; built-in plugins ship with the app
+   * and have no install step, so their FIRST ENABLE feeds it instead (see the
+   * Scene_Mods built-in-plugin branch), the same way a translation is counted
+   * at first activation. Switching overhauls never counts. What this de-dupes
+   * is re-enabling, uninstall -> reinstall, and version updates.
    *
    * Trivially cheatable by clearing site data, which is fine: that is effort,
    * and these are popularity figures, not audited ones.
@@ -2344,12 +2346,16 @@
       // POST itself still goes out (keepalive), so an unobserved outcome is
       // overwhelmingly a success: assume it, and correct only what we see.
       markCountedInstall(modId);
-      // Reflect it locally so the row's count updates immediately instead of
-      // waiting out the edge cache. Only when we already have counts:
-      // inventing a lone "1 install" while the rest are blank would read as
-      // though nobody else had ever installed it.
-      if (_installCounts && typeof _installCounts[modId] === "number") {
-        _installCounts[modId]++;
+      // Reflect it locally so the row's count updates immediately (via the
+      // refresh the install triggers) instead of waiting out the client memo
+      // and the Worker's edge cache. Include a first-ever install (no row yet
+      // -> 1): the user just performed it, so "1 install" on their own row is
+      // truthful, not a lonely invention. Suppress only when counts never
+      // loaded (_installCounts null), where a bare number would mislead.
+      if (_installCounts) {
+        var cur =
+          typeof _installCounts[modId] === "number" ? _installCounts[modId] : 0;
+        _installCounts[modId] = cur + 1;
       }
       fetch("/api/dl/" + encodeURIComponent(modId), {
         method: "POST",
@@ -2396,7 +2402,11 @@
   function installCountFor(modId) {
     if (!_installCounts) return null;
     var n = _installCounts[modId];
-    return typeof n === "number" ? n : null;
+    // Draw only a genuine, positive count. A row absent from the counts is
+    // undefined; a POST rollback can drive an optimistic bump back down to 0.
+    // Either way there is nothing worth showing, so fall back to no label
+    // rather than "0 installs".
+    return typeof n === "number" && n > 0 ? n : null;
   }
 
   /**
@@ -2443,7 +2453,17 @@
           ctrl.abort();
         }, 5000)
       : null;
-    var opts = {};
+    // no-store, not the browser default: the response is Cache-Control
+    // max-age=60, but a stale empty {} from before D1 had any rows was being
+    // served from the browser HTTP cache well past that (verified: a default
+    // fetch returned {} while a no-store fetch returned live data -- the cached
+    // entry keeps whatever headers an earlier Worker stored it under). Reading
+    // it stale then writes {} back over the IDB fallback, so the menu shows no
+    // counts. Bypass the browser cache entirely: Cloudflare's edge cache
+    // (s-maxage) is what actually shields D1, and the in-memory memo
+    // (_installCountsAt) already stops repeat fetches within a session. This
+    // also self-heals users who cached the empty {}: their next fetch skips it.
+    var opts = { cache: "no-store" };
     if (ctrl) opts.signal = ctrl.signal;
 
     fetch("/api/dl", opts)
@@ -6208,6 +6228,11 @@
             return;
           }
           setPluginActive(mod.key, true);
+          // Built-in plugins have no install action to count (they ship with
+          // the app), so first enable is the adoption event worth recording --
+          // like a translation's first activation. trackModInstall de-dupes,
+          // so re-enabling never recounts.
+          trackModInstall(mod.key);
           SoundManager.playOk();
           var self = this;
           loadPluginMod(mod.key, function () {
