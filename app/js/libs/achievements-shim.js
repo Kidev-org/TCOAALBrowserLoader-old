@@ -33,6 +33,22 @@
 
   // Canonical IDs extracted from the game's plugin-command data
   // (`achv <ID>` in Map*.json events). Order mirrors achievements.md.
+  //
+  // This is the ONLY list of achievements in the project. Its order is also
+  // the BIT ORDER of the mask POSTed to /api/achv (index i is bit `1 << i`),
+  // and the counter Worker reads this very array out of this very file at
+  // runtime (achievementIds() in worker/src/index.js) rather than keeping a
+  // copy -- so adding an achievement here is the whole change, with no second
+  // list to update and no Worker redeploy.
+  //
+  // APPEND-ONLY. Reordering remaps the masks already recorded by deployed
+  // clients onto the wrong achievements, with no way to detect or undo it
+  // afterwards. New achievements go on the end.
+  //
+  // Two shape constraints that parser relies on: the declaration must stay a
+  // top-level `var` of this name opening an array literal, and each entry must
+  // carry a literal id in UPPER_SNAKE double quotes. Both are covered by the
+  // "Achievement registry <-> counter Worker contract" tests in tools/test.js.
   var ACHIEVEMENTS = [
     {
       id: "EP1_CLEAR",
@@ -178,6 +194,7 @@
     if (state[key]) return false;
     state[key] = { t: Date.now() };
     saveState(state);
+    reportUnlocks();
     showToast(entry);
     playSound();
     return true;
@@ -198,6 +215,242 @@
       };
     });
   };
+
+  // Global stats (player count + per-achievement completion rate)
+  //
+  // Two halves, both talking to the Worker in worker/src/index.js:
+  //   report -> POST /api/achv/{mask}[?new=1], at most once per event per
+  //             browser, so the totals mean "how many people" and not "how
+  //             many times a page loaded".
+  //   read   -> GET /api/achv, once per session, to draw the menu.
+  //
+  // Deliberately public and unaudited, exactly like the mod install counts:
+  // cheatable by clearing site data, which is effort spent to make a
+  // popularity figure slightly wrong.
+
+  // What this browser has already told the API about. Both keys are spared by
+  // our own "Clear browser data" buttons (INSTALL_FLAG_RE in index.html and
+  // loader.html) -- surviving a clear is the entire point, since a browser
+  // that forgets is a browser that counts itself as a second player. Only the
+  // browser's native site-data controls reset them.
+  var ACHV_PLAYER_KEY = "_achvPlayerCounted";
+  var ACHV_REPORTED_KEY = "_achvReported";
+
+  // Hard ceiling on the ACHIEVEMENTS registry, mirroring MAX_ACHIEVEMENTS in
+  // worker/src/index.js. JavaScript's bitwise operators coerce to 32-bit
+  // SIGNED integers: bit 31 is the sign bit (1 << 31 is negative, which the
+  // Worker rejects) and bit 32 wraps silently onto bit 0, which would inflate
+  // the FIRST achievement's count instead of failing. 31 usable bits (0..30)
+  // is the honest limit of a single-number mask; there are 20 today.
+  //
+  // Growing past this needs a real wire change on both sides (a second mask,
+  // or a list of ids). Until then, refuse to report the overflow rather than
+  // corrupt a live counter, and say so once in the console.
+  var MAX_ACHIEVEMENTS = 31;
+  var _warnedOverflow = false;
+
+  /** Bitmask of everything currently unlocked, in ACHIEVEMENTS order. */
+  function unlockedMask() {
+    var state = loadState();
+    var n = ACHIEVEMENTS.length;
+    if (n > MAX_ACHIEVEMENTS) {
+      n = MAX_ACHIEVEMENTS;
+      if (!_warnedOverflow) {
+        _warnedOverflow = true;
+        console.error(
+          "[achv] registry has " +
+            ACHIEVEMENTS.length +
+            " achievements; only the first " +
+            MAX_ACHIEVEMENTS +
+            " can be reported through a 32-bit mask. " +
+            "The /api/achv wire format must change before adding more.",
+        );
+      }
+    }
+    var mask = 0;
+    for (var i = 0; i < n; i++) {
+      if (state[ACHIEVEMENTS[i].id]) mask |= 1 << i;
+    }
+    return mask;
+  }
+
+  /** Bitmask of what we have already counted. 0 on anything unparseable. */
+  function reportedMask() {
+    try {
+      var n = parseInt(localStorage.getItem(ACHV_REPORTED_KEY) || "0", 10);
+      return n >= 0 ? n : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function setReportedMask(mask) {
+    try {
+      localStorage.setItem(ACHV_REPORTED_KEY, String(mask));
+    } catch (e) {
+      // Private mode / quota: worst case this browser reports again later.
+    }
+  }
+
+  function isPlayerCounted() {
+    try {
+      return localStorage.getItem(ACHV_PLAYER_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Count this browser's unreported unlocks, and itself as a player the first
+   * time. Fire-and-forget: called at boot (to flush anything unlocked while
+   * offline, or before this feature existed) and after every unlock.
+   *
+   * A browser with no player flag is new: it adds 1 to the player total and
+   * whatever it has unlocked right now, in one POST. After that it only ever
+   * adds achievements, never players again -- which is what makes a
+   * percentage meaningful rather than a ratio of two unrelated numbers.
+   */
+  function reportUnlocks() {
+    try {
+      if (typeof fetch !== "function") return;
+      // Offline: nothing is lost. The flags are unchanged, so the next boot
+      // (or the next unlock while online) reports the same backlog.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        return;
+      }
+      var isNew = !isPlayerCounted();
+      var already = reportedMask();
+      var delta = unlockedMask() & ~already;
+      if (!isNew && delta === 0) return;
+
+      // Mark BEFORE the response lands, and roll back only on a failure we
+      // actually observe -- the same trade as trackModInstall in lang-shim.js.
+      // The page can go away mid-flight (a scene change, a reload, closing the
+      // tab) while `keepalive` still delivers the POST, so an unobserved
+      // outcome is overwhelmingly a success: assume it, and correct only what
+      // we are told about. Double-counting a player is worse than missing a
+      // rare achievement.
+      if (isNew) {
+        try {
+          localStorage.setItem(ACHV_PLAYER_KEY, "1");
+        } catch (e) {}
+      }
+      setReportedMask(already | delta);
+
+      // Reflect it locally so the menu shows this user's own contribution
+      // immediately, instead of waiting out the session memo and the Worker's
+      // edge cache. Suppressed while _stats is null, where inventing numbers
+      // would be worse than drawing none.
+      if (_stats) {
+        if (isNew) _stats.players++;
+        for (var i = 0; i < ACHIEVEMENTS.length; i++) {
+          if (delta & (1 << i)) {
+            var id = ACHIEVEMENTS[i].id;
+            _stats.counts[id] = (_stats.counts[id] || 0) + 1;
+          }
+        }
+      }
+
+      fetch("/api/achv/" + delta + (isNew ? "?new=1" : ""), {
+        method: "POST",
+        keepalive: true,
+      })
+        .then(function (res) {
+          if (res && res.ok) return;
+          // A response we actually received that says no (400/429/5xx): undo
+          // exactly what this call claimed, so a later attempt can retry it.
+          if (isNew) {
+            try {
+              localStorage.removeItem(ACHV_PLAYER_KEY);
+            } catch (e) {}
+            if (_stats) _stats.players--;
+          }
+          setReportedMask(reportedMask() & ~delta);
+          if (_stats) {
+            for (var j = 0; j < ACHIEVEMENTS.length; j++) {
+              if (delta & (1 << j)) {
+                var k = ACHIEVEMENTS[j].id;
+                if (_stats.counts[k]) _stats.counts[k]--;
+              }
+            }
+          }
+        })
+        .catch(function () {
+          // Deliberately NOT a rollback: a rejected promise here usually means
+          // the page went away, not that the POST failed (keepalive still
+          // delivers it). See the marking comment above.
+        });
+    } catch (e) {
+      // Counting must never break an unlock that already happened.
+    }
+  }
+
+  // {players, counts} once loaded, null until then. Read once per session:
+  // the numbers move slowly, reportUnlocks keeps our own contribution live
+  // locally, and the menu simply draws no percentages while this is null.
+  var _stats = null;
+  var _statsLoaded = false;
+  var _statsInFlight = false;
+  var _statsWaiters = [];
+
+  /** Load the global stats, coalescing concurrent callers onto one request. */
+  function loadStats(callback) {
+    if (_statsLoaded) {
+      if (callback) callback(_stats);
+      return;
+    }
+    if (callback) _statsWaiters.push(callback);
+    if (_statsInFlight) return;
+    if (typeof fetch !== "function") {
+      settleStats(null);
+      return;
+    }
+    _statsInFlight = true;
+    fetch("/api/achv", { credentials: "same-origin" })
+      .then(function (res) {
+        return res && res.ok ? res.json() : null;
+      })
+      .then(function (data) {
+        settleStats(
+          data && typeof data.players === "number"
+            ? { players: data.players, counts: data.counts || {} }
+            : null,
+        );
+      })
+      .catch(function () {
+        // Offline or the API is down: the menu drops the percentages and the
+        // player count, and is otherwise fully usable.
+        settleStats(null);
+      });
+  }
+
+  function settleStats(stats) {
+    _stats = stats;
+    _statsLoaded = true;
+    _statsInFlight = false;
+    var waiters = _statsWaiters;
+    _statsWaiters = [];
+    for (var i = 0; i < waiters.length; i++) {
+      try {
+        waiters[i](_stats);
+      } catch (e) {}
+    }
+  }
+
+  /**
+   * Share of players holding this achievement, as a display string, or "" when
+   * unknown. Guarded on players > 0 so a fresh (or unreachable) database can
+   * never divide by zero or print a fictional 100%.
+   */
+  function completionText(id) {
+    if (!_stats || !(_stats.players > 0)) return "";
+    var n = _stats.counts[id] || 0;
+    var pct = (n / _stats.players) * 100;
+    // Rare achievements are the interesting ones, so keep a decimal below 10%
+    // rather than collapsing every one of them onto "0%" / "1%".
+    if (pct > 0 && pct < 10) return pct.toFixed(1) + "%";
+    return Math.round(pct) + "%";
+  }
 
   // Toast (DOM overlay: works regardless of scene / WebGL state)
 
@@ -458,6 +711,10 @@
 
     defineScenes();
     ensureIcons();
+    // Flush anything unlocked while offline, plus the whole existing set for a
+    // browser that played before this feature shipped (which also counts it as
+    // a player). A no-op once there is nothing new to say.
+    reportUnlocks();
   }
 
   function defineScenes() {
@@ -480,13 +737,68 @@
 
     Scene_Achievements.prototype.createHelpWindow = function () {
       this._helpWindow = new Window_Help(1);
+      this.addWindow(this._helpWindow);
+      this.refreshHelpWindow();
+      // Stats may already be memoized from an earlier visit, in which case
+      // this callback runs synchronously and the redraw below is a no-op.
+      var self = this;
+      loadStats(function () {
+        if (!self._helpWindow) return;
+        self.refreshHelpWindow();
+        if (self._listWindow) self._listWindow.refresh();
+      });
+    };
+
+    // The stock Window_Help draws one left-aligned string, so the player total
+    // is drawn as a second pass over the same line rather than being packed
+    // into setText.
+    //
+    // CENTERED, not right-aligned: the Mouse Control mod draws its own
+    // "<- Back" label on the top-right of the help window of every fullscreen
+    // scene (drawBackButton in MouseControl.js), and this scene is one of
+    // them. The right edge is spoken for; the middle is empty in both cases.
+    Scene_Achievements.prototype.refreshHelpWindow = function () {
+      var w = this._helpWindow;
       var list = window.__achvList();
       var nUnlocked = 0;
       for (var i = 0; i < list.length; i++) if (list[i].unlocked) nUnlocked++;
-      this._helpWindow.setText(
-        "Achievements  " + nUnlocked + " / " + list.length,
-      );
-      this.addWindow(this._helpWindow);
+      w.contents.clear();
+      w.resetTextColor();
+      var title = "Achievements  " + nUnlocked + " / " + list.length;
+      var innerW = w.contentsWidth() - w.textPadding() * 2;
+      w.drawText(title, w.textPadding(), 0, innerW);
+      // Omitted entirely when the API is unreachable: no players line at all
+      // reads as "not loaded", where "0 players" would read as broken.
+      if (_stats && _stats.players > 0) {
+        var label =
+          _stats.players.toLocaleString() +
+          (_stats.players === 1 ? " player" : " players");
+        var titleW = w.textWidth(title);
+        w.contents.fontSize = 20;
+        // Shrink rather than overlap. Centering only clears the title on the
+        // left once the label is narrow enough, and the title grows with the
+        // achievement count while the label grows with the player count -- so
+        // measure both instead of assuming. Realistic counts never trip this;
+        // it exists so a surprise (a very large number, a wider font from a
+        // translation) degrades to smaller text rather than to a collision.
+        while (
+          w.contents.fontSize > 12 &&
+          (innerW - w.textWidth(label)) / 2 <= titleW + 8
+        ) {
+          w.contents.fontSize -= 2;
+        }
+        w.contents.textColor = "#c8b895";
+        w.drawText(label, w.textPadding(), 0, innerW, "center");
+        w.contents.fontSize = w.standardFontSize();
+        w.resetTextColor();
+      }
+      // The clear() above wipes Mouse Control's "<- Back" label, which that
+      // plugin draws directly onto these contents exactly once (it early-exits
+      // while _mcBackRect is set). Without this, an async stats load would
+      // erase the label for good while leaving its click rect live: a button
+      // that is invisible but still works. Dropping the rect makes the
+      // plugin's next update frame redraw it.
+      this._mcBackRect = null;
     };
 
     Scene_Achievements.prototype.createListWindow = function () {
@@ -580,13 +892,24 @@
       this.drawText(a.name, tx, rect.y, tw);
 
       this.contents.fontSize = 18;
+      // Share of all players holding this one, drawn on the description line's
+      // right edge. Always shown, locked or not: how rare an achievement is is
+      // exactly the hint a locked row wants to give. "" while the API has not
+      // answered, in which case the description keeps the full width.
+      var pct = completionText(a.id);
+      var pctW = pct ? this.textWidth(pct) + 12 : 0;
+      if (pct) {
+        this.contents.textColor = "#8fa87c";
+        this.drawText(pct, tx, rect.y + lh - 4, tw, "right");
+      }
+
       this.contents.textColor = a.unlocked ? "#c8b895" : "#6a6458";
       var desc = a.unlocked
         ? a.description
         : a.description
           ? a.description
           : "Locked";
-      this.drawText(desc, tx, rect.y + lh - 4, tw);
+      this.drawText(desc, tx, rect.y + lh - 4, tw - pctW);
 
       if (a.unlocked && a.unlockedAt) {
         this.contents.fontSize = 14;

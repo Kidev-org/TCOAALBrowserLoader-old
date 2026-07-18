@@ -1663,8 +1663,10 @@ self.addEventListener("fetch", (event) => {
   // cache headers.
   if (logicalPath === "sw.js") return;
 
-  // api/*: the install-counter Worker (POST api/dl/{modId} to count an
-  // install, GET api/dl for every count; see trackModInstall in lang-shim.js).
+  // api/*: the counter Worker (POST api/dl/{modId} to count an install, GET
+  // api/dl for every count -- see trackModInstall in lang-shim.js; POST
+  // api/achv/{mask} and GET api/achv for the achievement stats -- see
+  // reportUnlocks in achievements-shim.js).
   // Do NOT intercept: these are live network calls to a Worker route on this
   // same origin, and serving them from here would only waste a hashed-path IDB
   // lookup before falling through to the network anyway. They stay out of

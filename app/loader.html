@@ -7208,12 +7208,15 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // with "<modId>:" so saves are isolated per mod (see lang-shim.js).
       // Match both forms.
       var SAVE_KEY_RE = /(?:^|:)RPG (?:File\d+|Global|Config|Auto\d+)$/;
-      // Install-count bookkeeping (lang-shim's _countedMods / backfill tries).
-      // These guard against re-counting an install to the API, so our own
-      // "Clear browser data" buttons must NEVER erase them - not even on a full
-      // ctrl/cmd+click wipe. The only sanctioned reset is the browser's native
-      // site-data controls. Mirrors index.html's copy, keep both in sync.
-      var INSTALL_FLAG_RE = /^_(?:countedMods|countBackfillTries)$/;
+      // API-count bookkeeping: lang-shim's _countedMods / backfill tries, and
+      // achievements-shim's _achvPlayerCounted / _achvReported. These guard
+      // against re-counting an install, a player or an achievement to the API,
+      // so our own "Clear browser data" buttons must NEVER erase them - not
+      // even on a full ctrl/cmd+click wipe. The only sanctioned reset is the
+      // browser's native site-data controls. Mirrors index.html's copy, keep
+      // both in sync.
+      var INSTALL_FLAG_RE =
+        /^_(?:countedMods|countBackfillTries|achvPlayerCounted|achvReported)$/;
 
       // Wipe every localStorage key except the install-count flags, which our
       // clears always spare. When keepSaves is true, save keys are spared too.

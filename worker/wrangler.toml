@@ -45,6 +45,32 @@ namespace_id = "1003"
   limit = 8
   period = 60
 
+# Achievements (POST /api/achv). The tightest bucket here, because the honest
+# client is the quietest thing on this Worker:
+#
+#   - the whole existing set goes out as ONE POST (a bitmask), not one per
+#     achievement, so a first launch costs exactly 1 request no matter how much
+#     the player has already unlocked
+#   - after that it is one POST per NEW unlock, and unlocks are tens of minutes
+#     of play apart
+#   - a boot with nothing new to report sends no request at all
+#
+# So the real ceiling is ~3/min: an ending that grants two achievements at once
+# (each unlock() reports separately), plus a boot backlog POST. 4 leaves one
+# spare on top of that.
+#
+# Cheap to get wrong on the low side: a throttled POST returns 429, the client
+# rolls the flags back and retries on its next boot (see reportUnlocks), so a
+# false positive delays a count rather than losing it. That asymmetry is what
+# lets this sit close to real usage instead of far above it.
+[[ratelimits]]
+name = "ACHV_LIMITER"
+namespace_id = "1004"
+
+  [ratelimits.simple]
+  limit = 4
+  period = 60
+
 # Nothing here is secret: the counter is public by design.
 [observability]
 enabled = true
