@@ -673,6 +673,12 @@
         var LANG_CACHE_KEY = "__lang_data__";
         // Mirrors loader.html's SAVE_KEY_RE exactly, keep both in sync.
         var SAVE_KEY_RE = /(?:^|:)RPG (?:File\d+|Global|Config|Auto\d+)$/;
+        // Install-count bookkeeping (lang-shim's _countedMods / backfill tries).
+        // These guard against re-counting an install to the API, so our own
+        // "Clear browser data" buttons must NEVER erase them - not even on a
+        // full ctrl/cmd+click wipe. The only sanctioned reset is the browser's
+        // native site-data controls. Mirrors loader.html's copy, keep in sync.
+        var INSTALL_FLAG_RE = /^_(?:countedMods|countBackfillTries)$/;
 
         // Every IndexedDB connection this page opens is tracked here so the
         // clear-and-reload flow can close them first. An open connection
@@ -801,18 +807,19 @@
           // 3. localStorage. Preserve save keys unless the user explicitly
           // opted into wiping them (ctrl/cmd+click, confirmed above).
           try {
-            if (wipeSaves) {
-              localStorage.clear();
-            } else {
-              var keysToRemove = [];
-              for (var i = 0; i < localStorage.length; i++) {
-                var k = localStorage.key(i);
-                if (k && !SAVE_KEY_RE.test(k)) keysToRemove.push(k);
-              }
-              keysToRemove.forEach(function (k) {
-                localStorage.removeItem(k);
-              });
+            var keysToRemove = [];
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (!k) continue;
+              // Install-count flags survive every one of our clears.
+              if (INSTALL_FLAG_RE.test(k)) continue;
+              // Save keys survive unless the user opted into wiping them.
+              if (!wipeSaves && SAVE_KEY_RE.test(k)) continue;
+              keysToRemove.push(k);
             }
+            keysToRemove.forEach(function (k) {
+              localStorage.removeItem(k);
+            });
           } catch (e) {}
 
           // 3b. Close every IndexedDB connection this page opened. An open

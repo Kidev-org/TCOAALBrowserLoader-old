@@ -6275,7 +6275,7 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           } catch (e) {}
         }
         try {
-          localStorage.clear();
+          clearLocalStorageExceptFlags(false);
         } catch (e) {}
 
         // Release the modding panel's long-lived IDB handle so it can't block
@@ -7111,22 +7111,11 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
           } catch (e) {}
         }
         try {
-          if (wipeSaves) {
-            localStorage.clear();
-          } else {
-            // Preserve save keys (RPG File*, RPG Global, etc.) on every
-            // platform so a routine "Clear browser data" never costs the
-            // user their progress. Only an explicit ctrl/cmd+click
-            // (wipeSaves) clears them too.
-            var keysToRemove = [];
-            for (var i = 0; i < localStorage.length; i++) {
-              var k = localStorage.key(i);
-              if (k && !SAVE_KEY_RE.test(k)) keysToRemove.push(k);
-            }
-            keysToRemove.forEach(function (k) {
-              localStorage.removeItem(k);
-            });
-          }
+          // Preserve save keys (RPG File*, RPG Global, etc.) on every platform
+          // so a routine "Clear browser data" never costs the user their
+          // progress. Only an explicit ctrl/cmd+click (wipeSaves) clears them
+          // too. The install-count flags are spared regardless (see helper).
+          clearLocalStorageExceptFlags(!wipeSaves);
         } catch (e) {}
 
         // Proactively close any IDB handle this page itself still holds open
@@ -7219,6 +7208,28 @@ Depot download complete : "...\steamapps\content\app_2378900\depot_2378901"'
       // with "<modId>:" so saves are isolated per mod (see lang-shim.js).
       // Match both forms.
       var SAVE_KEY_RE = /(?:^|:)RPG (?:File\d+|Global|Config|Auto\d+)$/;
+      // Install-count bookkeeping (lang-shim's _countedMods / backfill tries).
+      // These guard against re-counting an install to the API, so our own
+      // "Clear browser data" buttons must NEVER erase them - not even on a full
+      // ctrl/cmd+click wipe. The only sanctioned reset is the browser's native
+      // site-data controls. Mirrors index.html's copy, keep both in sync.
+      var INSTALL_FLAG_RE = /^_(?:countedMods|countBackfillTries)$/;
+
+      // Wipe every localStorage key except the install-count flags, which our
+      // clears always spare. When keepSaves is true, save keys are spared too.
+      function clearLocalStorageExceptFlags(keepSaves) {
+        var keysToRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k) continue;
+          if (INSTALL_FLAG_RE.test(k)) continue;
+          if (keepSaves && SAVE_KEY_RE.test(k)) continue;
+          keysToRemove.push(k);
+        }
+        keysToRemove.forEach(function (k) {
+          localStorage.removeItem(k);
+        });
+      }
 
       // Show/hide the "Export save files" button in the manage panel
       // based on whether any saves currently exist in localStorage.

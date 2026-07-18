@@ -6712,17 +6712,21 @@
     }
 
     // Shared per-row renderer for Window_ModList and Window_ModActive so
-    // both surfaces display a mod with the exact same layout (icon, name,
-    // by-author, last-update, type tag, install status, description, and
-    // the Enabled/Disabled tag). Options:
+    // both surfaces display a mod with the exact same layout. The right column
+    // reads top-to-bottom: a single status label (line 1), then the last-update
+    // date (line 2) and the install count (line 3) as metadata below it. The
+    // left column is name + by-author (line 1), the type tag (line 2), and the
+    // description (line 3). Options:
     //   showTypeTag        omit the [Type] badge in the middle column (pin)
-    //   showInstallStatus  omit the right-side "Installed/Not installed"
-    //                      label (pin: the active mod is installed by
-    //                      definition, otherwise it couldn't be active)
-    //   showEnabledBadge   omit the right-side "Enabled"/"Disabled" badge
-    //                      (pin: the [Active ...] tag in line 2 already
-    //                      conveys the same information and the duplicate
-    //                      label cluttered the row)
+    //   showInstallStatus  omit the right-side status label - one of
+    //                      Not installed / Disabled / Enabled (plus the
+    //                      Installing.../Error/Unavailable states), shown one
+    //                      at a time (pin: the active mod is installed and
+    //                      enabled by definition, so the [Active ...] tag on
+    //                      line 2 already says so)
+    //   showEnabledBadge   legacy no-op: the Enabled/Disabled state is folded
+    //                      into the single status label above, kept only so
+    //                      existing callers' opts stay valid
     //   showActiveLabel    draw "[Active overhaul mod]" / "[Active
     //                      translation mod]" in green on line 2 (pin:
     //                      replaces the type tag, which would be redundant
@@ -6731,7 +6735,6 @@
       opts = opts || {};
       var showTypeTag = opts.showTypeTag !== false;
       var showInstallStatus = opts.showInstallStatus !== false;
-      var showEnabledBadge = opts.showEnabledBadge !== false;
       var showActiveLabel = !!opts.showActiveLabel;
       var lineHeight = win.lineHeight();
       var pad = rect.x;
@@ -6825,38 +6828,9 @@
         win.contents.fontSize = win.standardFontSize();
       }
 
-      var dateReserve = 0;
-      if (mod.lastUpdate) {
-        win.contents.fontSize = 16;
-        win.resetTextColor();
-        win.drawText(
-          mod.lastUpdate,
-          rect.x,
-          rect.y + 4,
-          rect.width - badgeReserve,
-          "right",
-        );
-        dateReserve = win.textWidth(mod.lastUpdate) + 12;
-        win.contents.fontSize = win.standardFontSize();
-      }
-
-      // How many people installed this mod, drawn left of the date in the same
-      // muted tone as the author so it reads as metadata rather than status.
-      // Null until the counts arrive (or forever, offline with nothing cached):
-      // the line just stays as it was.
-      var installs = installCountFor(mod.key);
-      if (installs !== null) {
-        win.contents.fontSize = 16;
-        win.contents.textColor = "#aaaacc";
-        win.drawText(
-          formatInstallCount(installs, mod.type),
-          rect.x,
-          rect.y + 4,
-          rect.width - badgeReserve - dateReserve,
-          "right",
-        );
-        win.contents.fontSize = win.standardFontSize();
-      }
+      // The last-update date and the install count are metadata, so they sit
+      // low in the right column (lines 2 and 3) under the single status label
+      // on line 1 - see the right-column block further down.
 
       var status = _modStatus[mod.key];
       var installed = status && status.installed;
@@ -6919,41 +6893,71 @@
         );
       }
 
+      // Line 1 (right): the single install/enable status label - exactly one
+      // of Installing.../Error/Not installed/Unavailable/Enabled/Disabled, one
+      // at a time. It sits to the left of any NEW/UPDATED badge (badgeReserve).
+      // Built-in plugins are always installed, so they fall straight through to
+      // the Unavailable/Enabled/Disabled branch.
       if (showInstallStatus) {
+        var statusText;
+        var statusColor = "#aaaaaa";
         if (status && status._downloading) {
-          win.contents.textColor = "#ffff88";
-          win.drawText(
-            status._progress || "Installing...",
-            rect.x,
-            lineY + 2,
-            rect.width,
-            "right",
-          );
+          statusText = status._progress || "Installing...";
+          statusColor = "#ffff88";
         } else if (status && status._error) {
-          win.contents.textColor = "#ff8888";
-          win.drawText(
-            "Error: " + status._error,
-            rect.x,
-            lineY + 2,
-            rect.width,
-            "right",
-          );
-        } else if (isBuiltIn(mod)) {
-          // Built-in plugins: no status label on the right.
+          statusText = "Error: " + status._error;
+          statusColor = "#ff8888";
+        } else if (!installed && !isBuiltIn(mod)) {
+          statusText = "Not installed";
+        } else if (!isActive && !isModAvailable(mod)) {
+          // Installed but gated by the active overhaul (e.g. Unlocker while a
+          // non-translation overhaul is active): the toggle is unavailable
+          // rather than something the user turned off.
+          statusText = "Unavailable";
+          statusColor = "#ffaa66";
+        } else if (isActive) {
+          statusText = "Enabled";
+          statusColor = "#88ff88";
         } else {
-          win.contents.textColor = installed ? "#88ff88" : "#aaaaaa";
-          win.drawText(
-            installed ? "Installed" : "Not installed",
-            rect.x,
-            lineY + 2,
-            rect.width,
-            "right",
-          );
+          statusText = "Disabled";
         }
+        win.contents.fontSize = 16;
+        win.contents.textColor = statusColor;
+        win.drawText(
+          statusText,
+          rect.x,
+          rect.y + 4,
+          rect.width - badgeReserve,
+          "right",
+        );
+        win.contents.fontSize = 16;
       }
 
-      // Line 3: description (left), enabled status (right)
+      // Line 2 (right): last-update date, muted, under the status label with a
+      // blank line's worth of gap between them (line 1 -> line 2 is a full
+      // lineHeight).
+      if (mod.lastUpdate) {
+        win.contents.fontSize = 16;
+        win.resetTextColor();
+        win.drawText(mod.lastUpdate, rect.x, lineY + 2, rect.width, "right");
+        win.contents.fontSize = 16;
+      }
+
+      // Line 3: description (left) with the install count pinned right, drawn
+      // directly under the date. Reserve the count's width so a long
+      // description never runs under it. installsText is null until the counts
+      // arrive (or forever offline with nothing cached), in which case the line
+      // just carries the description alone.
+      var installs = installCountFor(mod.key);
+      var installsText =
+        installs !== null ? formatInstallCount(installs, mod.type) : null;
+      var installsReserve = 0;
+      if (installsText) {
+        win.contents.fontSize = 16;
+        installsReserve = win.textWidth(installsText) + 16;
+      }
       if (mod.description) {
+        win.contents.fontSize = 16;
         win.contents.textColor = "#cccccc";
         // GameFont ships CJK Unified Ideographs glyphs but no Hangul/Thai/etc.
         // Canvas 2D falls back per-codepoint when the font-family list has
@@ -6963,35 +6967,25 @@
         win.contents.fontFace =
           _prevFace +
           ', "Noto Sans CJK KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
-        win.drawText(mod.description, textX, lineY + smallLine + 2, availW);
+        win.drawText(
+          mod.description,
+          textX,
+          lineY + smallLine + 2,
+          Math.max(0, availW - installsReserve),
+        );
         win.contents.fontFace = _prevFace;
       }
-
-      if (showEnabledBadge && (isBuiltIn(mod) || installed)) {
-        // Base-game-only mods (e.g. Unlocker) get a distinct "Unavailable"
-        // badge when a non-translation overhaul is active, so the row makes
-        // it clear that the toggle is gated by the active overhaul rather
-        // than the user having turned it off.
-        var unavailable = !isActive && !isModAvailable(mod);
-        if (unavailable) {
-          win.contents.textColor = "#ffaa66";
-          win.drawText(
-            "Unavailable",
-            rect.x,
-            lineY + smallLine + 2,
-            rect.width,
-            "right",
-          );
-        } else {
-          win.contents.textColor = isActive ? "#88ff88" : "#aaaaaa";
-          win.drawText(
-            isActive ? "Enabled" : "Disabled",
-            rect.x,
-            lineY + smallLine + 2,
-            rect.width,
-            "right",
-          );
-        }
+      if (installsText) {
+        // Muted so the count reads as metadata rather than status.
+        win.contents.fontSize = 16;
+        win.contents.textColor = "#aaaacc";
+        win.drawText(
+          installsText,
+          rect.x,
+          lineY + smallLine + 2,
+          rect.width,
+          "right",
+        );
       }
 
       win.contents.fontSize = win.standardFontSize();
@@ -7266,7 +7260,7 @@
           wash.y,
           wash.width,
           wash.height,
-          "rgba(128,128,140,0.16)",
+          "rgba(44,44,48,0.75)",
         );
       }
 
