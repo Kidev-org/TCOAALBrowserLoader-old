@@ -441,15 +441,48 @@
    * Share of players holding this achievement, as a display string, or "" when
    * unknown. Guarded on players > 0 so a fresh (or unreachable) database can
    * never divide by zero or print a fictional 100%.
+   *
+   * Precision follows the magnitude, because the rare achievements are the
+   * interesting ones and a fixed number of decimals either wastes digits at
+   * the top or collapses the bottom onto "0%":
+   *
+   *   everyone   100%
+   *   >= 10%     15.5%     1 decimal
+   *   >= 1%      4.59%     2 decimals
+   *   > 0%       0.777%    3 decimals
+   *   nobody     0%
    */
   function completionText(id) {
     if (!_stats || !(_stats.players > 0)) return "";
     var n = _stats.counts[id] || 0;
+    // Exact ends get exact labels: "100%" only when literally every counted
+    // player has it, "0%" rather than a row of zeroes when nobody does.
+    if (n <= 0) return "0%";
+    if (n >= _stats.players) return "100%";
+
     var pct = (n / _stats.players) * 100;
-    // Rare achievements are the interesting ones, so keep a decimal below 10%
-    // rather than collapsing every one of them onto "0%" / "1%".
-    if (pct > 0 && pct < 10) return pct.toFixed(1) + "%";
-    return Math.round(pct) + "%";
+    var digits = pct >= 10 ? 1 : pct >= 1 ? 2 : 3;
+    var text = pct.toFixed(digits);
+    // toFixed rounds both ways, and both ends can lie:
+    //   99.97  -> "100.0%", claiming every player holds it when some do not
+    //   0.0001 -> "0.000%", indistinguishable from the nobody-has-it "0%"
+    // Clamp to the nearest value this band can honestly show instead.
+    var step = Math.pow(10, -digits);
+    if (parseFloat(text) >= 100) return (100 - step).toFixed(digits) + "%";
+    if (parseFloat(text) === 0) return "<" + step.toFixed(digits) + "%";
+    return text + "%";
+  }
+
+  /**
+   * The same figure spelled out, for the hovered row: "(4/1,203)". Answers
+   * "out of how many?", which a percentage alone never does.
+   */
+  function completionDetail(id) {
+    if (!_stats || !(_stats.players > 0)) return "";
+    var n = _stats.counts[id] || 0;
+    return (
+      "(" + n.toLocaleString() + "/" + _stats.players.toLocaleString() + ")"
+    );
   }
 
   // Toast (DOM overlay: works regardless of scene / WebGL state)
@@ -735,70 +768,31 @@
       this.createListWindow();
     };
 
+    // Plain stock help window: title on the left and nothing else. It is drawn
+    // once, at creation, and never redrawn -- which matters, because the Mouse
+    // Control mod draws its own "<- Back" label straight onto these contents
+    // exactly once (drawBackButton in MouseControl.js, which early-exits while
+    // _mcBackRect is set). Any later contents.clear() here would erase that
+    // label for good while leaving its click rect live.
+    //
+    // The player total lives on the rows instead: hovering an achievement
+    // shows its "(count/players)", which is the same information where it is
+    // actually being asked for.
     Scene_Achievements.prototype.createHelpWindow = function () {
       this._helpWindow = new Window_Help(1);
-      this.addWindow(this._helpWindow);
-      this.refreshHelpWindow();
-      // Stats may already be memoized from an earlier visit, in which case
-      // this callback runs synchronously and the redraw below is a no-op.
-      var self = this;
-      loadStats(function () {
-        if (!self._helpWindow) return;
-        self.refreshHelpWindow();
-        if (self._listWindow) self._listWindow.refresh();
-      });
-    };
-
-    // The stock Window_Help draws one left-aligned string, so the player total
-    // is drawn as a second pass over the same line rather than being packed
-    // into setText.
-    //
-    // CENTERED, not right-aligned: the Mouse Control mod draws its own
-    // "<- Back" label on the top-right of the help window of every fullscreen
-    // scene (drawBackButton in MouseControl.js), and this scene is one of
-    // them. The right edge is spoken for; the middle is empty in both cases.
-    Scene_Achievements.prototype.refreshHelpWindow = function () {
-      var w = this._helpWindow;
       var list = window.__achvList();
       var nUnlocked = 0;
       for (var i = 0; i < list.length; i++) if (list[i].unlocked) nUnlocked++;
-      w.contents.clear();
-      w.resetTextColor();
-      var title = "Achievements  " + nUnlocked + " / " + list.length;
-      var innerW = w.contentsWidth() - w.textPadding() * 2;
-      w.drawText(title, w.textPadding(), 0, innerW);
-      // Omitted entirely when the API is unreachable: no players line at all
-      // reads as "not loaded", where "0 players" would read as broken.
-      if (_stats && _stats.players > 0) {
-        var label =
-          _stats.players.toLocaleString() +
-          (_stats.players === 1 ? " player" : " players");
-        var titleW = w.textWidth(title);
-        w.contents.fontSize = 20;
-        // Shrink rather than overlap. Centering only clears the title on the
-        // left once the label is narrow enough, and the title grows with the
-        // achievement count while the label grows with the player count -- so
-        // measure both instead of assuming. Realistic counts never trip this;
-        // it exists so a surprise (a very large number, a wider font from a
-        // translation) degrades to smaller text rather than to a collision.
-        while (
-          w.contents.fontSize > 12 &&
-          (innerW - w.textWidth(label)) / 2 <= titleW + 8
-        ) {
-          w.contents.fontSize -= 2;
-        }
-        w.contents.textColor = "#c8b895";
-        w.drawText(label, w.textPadding(), 0, innerW, "center");
-        w.contents.fontSize = w.standardFontSize();
-        w.resetTextColor();
-      }
-      // The clear() above wipes Mouse Control's "<- Back" label, which that
-      // plugin draws directly onto these contents exactly once (it early-exits
-      // while _mcBackRect is set). Without this, an async stats load would
-      // erase the label for good while leaving its click rect live: a button
-      // that is invisible but still works. Dropping the rect makes the
-      // plugin's next update frame redraw it.
-      this._mcBackRect = null;
+      this._helpWindow.setText(
+        "Achievements  " + nUnlocked + " / " + list.length,
+      );
+      this.addWindow(this._helpWindow);
+      // Stats may already be memoized from an earlier visit, in which case
+      // this runs synchronously and the redraw is a no-op.
+      var self = this;
+      loadStats(function () {
+        if (self._listWindow) self._listWindow.refresh();
+      });
     };
 
     Scene_Achievements.prototype.createListWindow = function () {
@@ -827,6 +821,20 @@
       this.refresh();
       this.select(0);
       this.activate();
+    };
+
+    // Only the selected row shows "(count/players)", so a moved cursor has to
+    // redraw: the row losing focus goes back to its percentage and the row
+    // gaining it spells the fraction out. Window_Selectable repaints the
+    // cursor sprite on select() but never the item contents.
+    //
+    // Guarded on an actual index change (Mouse Control calls select() from its
+    // per-frame hover test) and on contents existing, since the base
+    // initialize() selects before the first refresh has built them.
+    Window_AchievementList.prototype.select = function (index) {
+      var prev = this.index();
+      Window_Selectable.prototype.select.call(this, index);
+      if (prev !== index && this.contents) this.refresh();
     };
 
     Window_AchievementList.prototype.maxItems = function () {
@@ -896,10 +904,15 @@
       // right edge. Always shown, locked or not: how rare an achievement is is
       // exactly the hint a locked row wants to give. "" while the API has not
       // answered, in which case the description keeps the full width.
-      var pct = completionText(a.id);
+      //
+      // The hovered/selected row swaps the percentage for the raw
+      // "(count/players)" it came from, so the denominator is available on
+      // demand without a permanent header spending space on it.
+      var hovered = index === this.index();
+      var pct = hovered ? completionDetail(a.id) : completionText(a.id);
       var pctW = pct ? this.textWidth(pct) + 12 : 0;
       if (pct) {
-        this.contents.textColor = "#8fa87c";
+        this.contents.textColor = hovered ? "#c8d8b0" : "#8fa87c";
         this.drawText(pct, tx, rect.y + lh - 4, tw, "right");
       }
 
