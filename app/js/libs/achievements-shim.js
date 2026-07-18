@@ -474,7 +474,7 @@
   }
 
   /**
-   * The same figure spelled out, for the hovered row: "(4/1,203)". Answers
+   * The same figure spelled out, for the held row: "(4/1,203)". Answers
    * "out of how many?", which a percentage alone never does.
    */
   function completionDetail(id) {
@@ -775,9 +775,9 @@
     // _mcBackRect is set). Any later contents.clear() here would erase that
     // label for good while leaving its click rect live.
     //
-    // The player total lives on the rows instead: hovering an achievement
-    // shows its "(count/players)", which is the same information where it is
-    // actually being asked for.
+    // The player total lives on the rows instead: pressing and holding an
+    // achievement's percentage shows its "(count/players)", which is the same
+    // information where it is actually being asked for.
     Scene_Achievements.prototype.createHelpWindow = function () {
       this._helpWindow = new Window_Help(1);
       var list = window.__achvList();
@@ -817,24 +817,83 @@
 
     Window_AchievementList.prototype.initialize = function (x, y, w, h) {
       this._items = window.__achvList();
+      this._holdIndex = -1;
       Window_Selectable.prototype.initialize.call(this, x, y, w, h);
       this.refresh();
       this.select(0);
       this.activate();
     };
 
-    // Only the selected row shows "(count/players)", so a moved cursor has to
-    // redraw: the row losing focus goes back to its percentage and the row
-    // gaining it spells the fraction out. Window_Selectable repaints the
-    // cursor sprite on select() but never the item contents.
+    // Press-and-hold on a percentage swaps it for the "(count/players)" it was
+    // computed from. Deliberately not tied to the cursor or to hover: the
+    // fraction is an on-demand detail, so it costs a deliberate gesture and
+    // never appears while merely moving through the list.
     //
-    // Guarded on an actual index change (Mouse Control calls select() from its
-    // per-frame hover test) and on contents existing, since the base
-    // initialize() selects before the first refresh has built them.
-    Window_AchievementList.prototype.select = function (index) {
-      var prev = this.index();
-      Window_Selectable.prototype.select.call(this, index);
-      if (prev !== index && this.contents) this.refresh();
+    // The hit region is the percentage's own drawn text box and nothing else,
+    // recomputed from pctRect() rather than cached, so a scroll or a stats
+    // update can never leave a stale rect behind. Only the press that starts
+    // on a percentage arms the hold; sliding onto one mid-drag does not.
+    Window_AchievementList.prototype.update = function () {
+      Window_Selectable.prototype.update.call(this);
+      this.updateHold();
+    };
+
+    Window_AchievementList.prototype.updateHold = function () {
+      var held = -1;
+      if (this.isOpenAndActive() && TouchInput.isPressed()) {
+        held =
+          this._holdIndex >= 0
+            ? this._holdIndex
+            : TouchInput.isTriggered()
+              ? this.hitPctIndex(TouchInput.x, TouchInput.y)
+              : -1;
+      }
+      if (held !== this._holdIndex) {
+        this._holdIndex = held;
+        if (this.contents) this.refresh();
+      }
+    };
+
+    // Index whose percentage covers the given canvas point, or -1. Only the
+    // rows actually on screen are tested; an off-page row has no drawn text to
+    // press.
+    Window_AchievementList.prototype.hitPctIndex = function (cx, cy) {
+      var x = this.canvasToLocalX(cx) - this.padding;
+      var y = this.canvasToLocalY(cy) - this.padding;
+      if (x < 0 || y < 0) return -1;
+      if (x >= this.contentsWidth() || y >= this.contentsHeight()) return -1;
+      var top = this.topRow();
+      var end = Math.min(top + this.maxPageItems(), this.maxItems());
+      for (var i = top; i < end; i++) {
+        var r = this.pctRect(i);
+        if (!r) continue;
+        if (x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height) {
+          return i;
+        }
+      }
+      return -1;
+    };
+
+    // Box the percentage occupies, in contents coordinates. Measured from the
+    // percentage even while the fraction is showing in its place: the fraction
+    // is wider and only ever grows leftward, so the point that armed the hold
+    // stays inside the region for as long as the finger is down.
+    Window_AchievementList.prototype.pctRect = function (index) {
+      var a = this._items[index];
+      if (!a) return null;
+      var text = completionText(a.id);
+      if (!text) return null;
+      var rect = this.itemRectForText(index);
+      var prev = this.contents.fontSize;
+      this.contents.fontSize = 18;
+      var w = this.textWidth(text);
+      this.contents.fontSize = prev;
+      return {
+        x: rect.x + rect.width - w,
+        y: rect.y + this.lineHeight() - 4,
+        width: w,
+        height: this.lineHeight(),
+      };
     };
 
     Window_AchievementList.prototype.maxItems = function () {
@@ -905,14 +964,14 @@
       // exactly the hint a locked row wants to give. "" while the API has not
       // answered, in which case the description keeps the full width.
       //
-      // The hovered/selected row swaps the percentage for the raw
+      // Pressing and holding the percentage itself swaps it for the raw
       // "(count/players)" it came from, so the denominator is available on
       // demand without a permanent header spending space on it.
-      var hovered = index === this.index();
-      var pct = hovered ? completionDetail(a.id) : completionText(a.id);
+      var held = index === this._holdIndex;
+      var pct = held ? completionDetail(a.id) : completionText(a.id);
       var pctW = pct ? this.textWidth(pct) + 12 : 0;
       if (pct) {
-        this.contents.textColor = hovered ? "#c8d8b0" : "#8fa87c";
+        this.contents.textColor = held ? "#c8d8b0" : "#8fa87c";
         this.drawText(pct, tx, rect.y + lh - 4, tw, "right");
       }
 
