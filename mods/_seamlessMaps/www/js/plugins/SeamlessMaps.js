@@ -397,7 +397,7 @@
 
     // Self-walked seam transfer: the player stepped through a door under their
     // own control (a recent input-driven step) and it's a seamless overlap door
-    // -- not a scripted cutscene and not a mouse cross-click (which carries its
+    // not a scripted cutscene and not a mouse cross-click (which carries its
     // own resume). Arm a one-tile step-through so they don't stop dead on the
     // shared overlap tile (A) but continue into the new room (B).
     SM.walkThrough = false;

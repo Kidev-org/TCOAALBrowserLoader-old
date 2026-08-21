@@ -86,6 +86,7 @@ tools/
   build.sh              one-shot builder -> tools/bin/ (gitignored)
   desktop/
     Cargo.toml          workspace (core + both src-tauri crates)
+    stage-portable.js   stage bundle.resources next to a --no-bundle build
     core/               shared Rust: locate the bundled Node + run a tool
     creator/
       package.json      @tauri-apps/cli
@@ -104,16 +105,36 @@ tools/build.sh            # both apps -> tools/bin/
 ```
 
 `build.sh` installs the Tauri CLI, generates icons, stages this machine's Node
-into each app's `src-tauri/runtime/`, runs `tauri build`, and copies the
-executable + installers (AppImage/deb/rpm/dmg/msi/exe) into `tools/bin/`. It
-exports `APPIMAGE_EXTRACT_AND_RUN=1` / `NO_STRIP=true` so the AppImage step
-works without FUSE.
+into each app's `src-tauri/runtime/`, runs `tauri build --no-bundle`, and
+assembles the **standalone (portable) build** in `tools/bin/`. No installers
+(deb/rpm/AppImage/dmg/msi/NSIS) are produced.
+
+### What "standalone" has to look like
+
+The apps shell out to the bundled `tools/` scripts through Tauri's *resource
+dir*, which is resolved from the executable's own location - so the folder
+layout is what makes the build runnable, and a bare executable on its own does
+nothing but fail every action:
+
+| Platform | Built into `tools/bin/` | Resource dir the app resolves |
+| --- | --- | --- |
+| Linux | `<Product>/bin/<exe>` | `<exe dir>/../lib/<productName>` |
+| Windows | `<Product>/<exe>.exe` | the executable's own folder |
+| macOS | `<productName>.app` | `Contents/Resources` inside the `.app` |
+
+Copy that folder anywhere and run it in place; nothing is installed. On macOS
+the `.app` *is* the standalone application (the `.dmg` was only ever a wrapper
+around it), so there `build.sh` asks Tauri for the `app` bundle and the bundler
+stages `Contents/Resources` itself. Elsewhere `tauri build --no-bundle` emits
+just the executable, and **`stage-portable.js`** copies the resources declared
+in `tauri.conf.json`'s `bundle.resources` next to it, following the same rules
+as the bundlers.
 
 ## Build prerequisites
 
 - Rust (stable) and the platform's Tauri deps (on Arch:
   `webkit2gtk-4.1 base-devel librsvg libappindicator-gtk3`; on Debian/Ubuntu:
-  `libwebkit2gtk-4.1-dev librsvg2-dev libgtk-3-dev patchelf`).
+  `libwebkit2gtk-4.1-dev librsvg2-dev libgtk-3-dev libxdo-dev`).
 - Node.js (for `@tauri-apps/cli`).
 
 ## By hand (one app)
@@ -123,8 +144,10 @@ cd tools/desktop/creator        # or tools/desktop/user
 npm install                     # @tauri-apps/cli (once)
 npx @tauri-apps/cli icon ../../../app/img/icon-512.png   # once
 mkdir -p src-tauri/runtime && cp "$(command -v node)" src-tauri/runtime/node
-export APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true
-npx @tauri-apps/cli build       # outputs under tools/desktop/target/release/
+npx @tauri-apps/cli build --no-bundle   # macOS: --bundles app
+# the executable lands in tools/desktop/target/release/; to run it outside the
+# repo it needs its resources staged next to it (see the table above):
+node ../stage-portable.js src-tauri <resource dir>
 ```
 
 ## Fast iteration with `tauri dev`
@@ -150,14 +173,17 @@ a `MAJOR.MINOR.PATCH` version) builds both apps for Windows/macOS/Linux by
 running **`tools/build.sh <app>`** on each runner - the same script used locally,
 so CI and a local build cannot drift. The workflow only adds what is
 CI-specific: the platform build dependencies, the cargo cache, stamping the
-dispatched version into each `tauri.conf.json` (so the installers are not all
-named `0.1.0`), and publishing.
+dispatched version into each `tauri.conf.json` (so the builds are not all named
+`0.1.0`), archiving and publishing.
 
-Each of the six jobs uploads a `tcoaal-<app>-<platform>` artifact containing
-`installers/` (deb/rpm/AppImage, dmg + a zipped `.app`, msi + NSIS setup) and
-`standalone/` (the bare executable, renamed per platform - it needs the bundled
-resources, so it is not part of the release). The release job publishes the
-installers under the tag `desktop/v<version>`.
+Each of the six jobs uploads a `tcoaal-<app>-<platform>` artifact holding one
+archive of the standalone build (`.tar.gz` on Linux to keep the executable
+bits, `.zip` on Windows and macOS), and the release job publishes all six under
+the tag `desktop/v<version>`.
+
+The macOS `.app` is neither signed nor notarized (that needs a Developer ID and
+`APPLE_SIGNING_IDENTITY`), so Gatekeeper asks for a right-click -> Open on first
+launch.
 
 ## How the bundling works
 

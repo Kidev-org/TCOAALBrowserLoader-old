@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Build the TCOAAL desktop apps (Tauri v2) and drop their binaries + installers
-# into tools/bin/. Runs the same steps as the CI workflow, locally:
+# Build the TCOAAL desktop apps (Tauri v2) as standalone, portable builds and
+# drop them into tools/bin/. No installers (deb/rpm/AppImage/dmg/msi/NSIS) are
+# produced: each app is a folder you can copy anywhere and run in place.
+# Runs the same steps as the CI workflow, locally:
 #   - npm install (@tauri-apps/cli) per app
 #   - generate icons from app/img/icon-512.png
 #   - stage a Node runtime into src-tauri/runtime/ (this machine's node)
-#   - tauri build
-#   - copy the executable + any installers into tools/bin/
+#   - tauri build --no-bundle
+#   - assemble the portable layout under tools/bin/
+#
+# The app finds its bundled tools/, app/js/libs/ and Node runtime through
+# Tauri's resource dir, which is resolved from the executable's location - so
+# the layout is not cosmetic, it is what makes the build runnable:
+#   Linux    tools/bin/<Product>/bin/<exe>       + <Product>/lib/<Product Name>/
+#   Windows  tools/bin/<Product>/<exe>.exe       + <Product>/{tools,app,runtime}
+#   macOS    tools/bin/<Product Name>.app        (the .app *is* the standalone app)
+# On macOS a bare executable cannot work at all (it resolves resources at
+# ../Resources), so there we ask Tauri for the `app` bundle, which is the
+# application itself and not an installer.
 #
 # Usage:
 #   ./build.sh            # build both apps (creator + user)
@@ -21,16 +33,13 @@ ROOT="$(dirname "$TOOLS")"
 DESKTOP="$TOOLS/desktop"
 BIN="$TOOLS/bin"
 ICON_SRC="$ROOT/app/img/icon-512.png"
-
-# linuxdeploy / appimagetool are themselves AppImages and need FUSE; in sandboxes
-# and CI there is no FUSE, so tell them to extract-and-run instead.
-export APPIMAGE_EXTRACT_AND_RUN=1
-export NO_STRIP=true
+STAGE_PORTABLE="$DESKTOP/stage-portable.js"
 
 # node.exe on Windows (git-bash / msys), node elsewhere.
 case "$(uname -s)" in
-  MINGW* | MSYS* | CYGWIN*) NODE_NAME="node.exe"; EXE_EXT=".exe" ;;
-  *) NODE_NAME="node"; EXE_EXT="" ;;
+  MINGW* | MSYS* | CYGWIN*) PLATFORM="windows"; NODE_NAME="node.exe"; EXE_EXT=".exe" ;;
+  Darwin*) PLATFORM="macos"; NODE_NAME="node"; EXE_EXT="" ;;
+  *) PLATFORM="linux"; NODE_NAME="node"; EXE_EXT="" ;;
 esac
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' not found in PATH" >&2; exit 1; }; }
@@ -43,6 +52,11 @@ need cargo
 NODE_BIN="$(command -v node)"
 [ -f "$NODE_BIN" ] || NODE_BIN="$NODE_BIN.exe"
 [ -f "$NODE_BIN" ] || { echo "error: cannot locate the node binary ($NODE_BIN)" >&2; exit 1; }
+
+# conf_get <tauri.conf.json> <key>
+conf_get() {
+  node -e 'process.stdout.write(String(require(process.argv[1])[process.argv[2]] ?? ""))' "$1" "$2"
+}
 
 # build_app <app-dir-name> <cargo-bin-name>
 build_app() {
@@ -72,24 +86,47 @@ build_app() {
   chmod +x "src-tauri/runtime/$NODE_NAME" 2>/dev/null || true
 
   echo "    tauri build (first run compiles the crate graph; be patient)..."
-  npx --yes @tauri-apps/cli build
+  if [ "$PLATFORM" = "macos" ]; then
+    npx --yes @tauri-apps/cli build --bundles app
+  else
+    npx --yes @tauri-apps/cli build --no-bundle
+  fi
 
-  # Collect outputs into tools/bin/.
+  # Assemble the portable build in tools/bin/.
+  local product rel out
+  product="$(conf_get "$appdir/src-tauri/tauri.conf.json" productName)"
+  [ -n "$product" ] || { echo "error: tauri.conf.json has no productName" >&2; exit 1; }
+  rel="$DESKTOP/target/release"
   mkdir -p "$BIN"
-  local rel="$DESKTOP/target/release"
-  if [ -f "$rel/$binname$EXE_EXT" ]; then
-    cp "$rel/$binname$EXE_EXT" "$BIN/"
-    echo "    -> $BIN/$binname$EXE_EXT"
+
+  if [ "$PLATFORM" = "macos" ]; then
+    # The `app` bundler already staged the resources into Contents/Resources.
+    local src="$rel/bundle/macos/$product.app"
+    [ -d "$src" ] || { echo "error: tauri produced no app bundle at $src" >&2; exit 1; }
+    rm -rf "$BIN/$product.app"
+    cp -R "$src" "$BIN/"
+    echo "    -> $BIN/$product.app"
+    return
   fi
-  # Installers (AppImage/deb/rpm/dmg/msi/exe), if produced.
-  if [ -d "$rel/bundle" ]; then
-    while IFS= read -r f; do
-      cp "$f" "$BIN/"
-      echo "    -> $BIN/$(basename "$f")"
-    done < <(find "$rel/bundle" -type f \
-      \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \
-         -o -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \))
+
+  [ -f "$rel/$binname$EXE_EXT" ] || {
+    echo "error: tauri produced no executable at $rel/$binname$EXE_EXT" >&2
+    exit 1
+  }
+  out="$BIN/${product// /-}"
+  rm -rf "$out"
+  if [ "$PLATFORM" = "windows" ]; then
+    # Windows resolves resources next to the executable.
+    mkdir -p "$out"
+    cp "$rel/$binname$EXE_EXT" "$out/"
+    node "$STAGE_PORTABLE" "$appdir/src-tauri" "$out"
+  else
+    # Linux resolves them at <exe dir>/../lib/<productName>.
+    mkdir -p "$out/bin"
+    cp "$rel/$binname" "$out/bin/"
+    node "$STAGE_PORTABLE" "$appdir/src-tauri" "$out/lib/$product"
   fi
+  echo "    -> $out/"
 }
 
 target="${1:-all}"
@@ -104,4 +141,4 @@ case "$target" in
 esac
 
 echo
-echo "Done. Binaries and installers are in: $BIN"
+echo "Done. Standalone builds are in: $BIN"
