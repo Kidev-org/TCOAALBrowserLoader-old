@@ -38,7 +38,11 @@ need node
 need npm
 need cargo
 
+# On git-bash `command -v node` reports the path without the .exe suffix; most
+# msys tools cope, but be explicit so `cp` never misses.
 NODE_BIN="$(command -v node)"
+[ -f "$NODE_BIN" ] || NODE_BIN="$NODE_BIN.exe"
+[ -f "$NODE_BIN" ] || { echo "error: cannot locate the node binary ($NODE_BIN)" >&2; exit 1; }
 
 # build_app <app-dir-name> <cargo-bin-name>
 build_app() {

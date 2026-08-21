@@ -145,9 +145,19 @@ TCOAAL_NODE="$(command -v node)" \
 
 ## CI
 
-`.github/workflows/desktop.yml` builds both apps for Windows/macOS/Linux on tag
-`v*` (or manual dispatch): it copies the runner's Node into `runtime/`, generates
-icons, runs `tauri build`, and uploads the installers as artifacts.
+`.github/workflows/deploy-desktop.yml` (**Deploy Desktop**, manual dispatch with
+a `MAJOR.MINOR.PATCH` version) builds both apps for Windows/macOS/Linux by
+running **`tools/build.sh <app>`** on each runner - the same script used locally,
+so CI and a local build cannot drift. The workflow only adds what is
+CI-specific: the platform build dependencies, the cargo cache, stamping the
+dispatched version into each `tauri.conf.json` (so the installers are not all
+named `0.1.0`), and publishing.
+
+Each of the six jobs uploads a `tcoaal-<app>-<platform>` artifact containing
+`installers/` (deb/rpm/AppImage, dmg + a zipped `.app`, msi + NSIS setup) and
+`standalone/` (the bare executable, renamed per platform - it needs the bundled
+resources, so it is not part of the release). The release job publishes the
+installers under the tag `desktop/v<version>`.
 
 ## How the bundling works
 

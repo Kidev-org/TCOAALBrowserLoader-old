@@ -1,116 +1,227 @@
 name: Deploy Desktop
 
+# Builds the two Tauri desktop apps (creator + user) for Linux, macOS and
+# Windows by running the very same script a developer runs locally,
+# `tools/build.sh <app>`, on each runner. The script owns the build steps
+# (npm install, icon generation, staging this machine's Node into
+# src-tauri/runtime/, `tauri build`, collecting the outputs into tools/bin/);
+# this workflow only owns the things that are CI-specific: platform build
+# dependencies, caching, stamping the release version, and publishing.
+
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version"
+        description: "Release version (MAJOR.MINOR.PATCH)"
         required: true
         type: string
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    # git-bash on Windows, so tools/build.sh runs the same everywhere.
+    shell: bash
+
 jobs:
+  # Validate the version once, before spending six runners on it. The bundlers
+  # (msi/dmg) require a strict MAJOR.MINOR.PATCH, so reject anything else here.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Normalize and validate the version
+        id: version
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        run: |
+          v="${RAW_VERSION#v}"
+          if ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must be MAJOR.MINOR.PATCH (got '$RAW_VERSION')"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Building desktop v$v"
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         app: [creator, user]
-        os: [ubuntu-24.04, macos-26, windows-11]
+        os: [ubuntu-24.04, macos-26, windows-2025]
+        include:
+          # Cargo bin name per app (see tools/desktop/*/src-tauri/Cargo.toml).
+          - app: creator
+            bin: tcoaal-mod-creator
+          - app: user
+            bin: tcoaal-mod-installer
+          # Suffix for the standalone executable, whose name is otherwise
+          # identical on Linux and macOS.
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: macos-26
+            platform: macos-aarch64
+          - os: windows-2025
+            platform: windows-x86_64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Linux build deps
-        if: startsWith(matrix.os, 'ubuntu')
+      # Tauri v2 Linux prerequisites (https://v2.tauri.app/start/prerequisites/).
+      # Note: on 24.04 the tray dependency is libayatana-appindicator3-dev;
+      # libappindicator3-dev no longer exists in noble.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            build-essential \
+            libgtk-3-dev \
+            libxdo-dev \
             libssl-dev \
-            libgtk-3-dev
+            build-essential \
+            patchelf \
+            file
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Cache cargo
-        uses: actions/cache@v5.0.5
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tools/desktop/target
-          key: ${{ matrix.os }}-cargo-${{ hashFiles('tools/desktop/**/Cargo.toml') }}
+          workspaces: tools/desktop
+          key: ${{ matrix.app }}
 
       - name: Setup Node
         uses: actions/setup-node@v6.4.0
         with:
-          node-version: 20
+          node-version: 22
+          # No npm cache: the apps intentionally ship no package-lock.json,
+          # and setup-node's cache requires a lockfile.
 
-      - name: Install Tauri CLI
-        working-directory: tools/desktop/${{ matrix.app }}
-        run: npm install
-
-      - name: Bundle the Node runtime (this runner's node, matches the target OS)
-        shell: bash
-        run: |
-          dest="tools/desktop/${{ matrix.app }}/src-tauri/runtime"
-          mkdir -p "$dest"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "$(command -v node)" "$dest/node.exe"
-          else
-            cp "$(command -v node)" "$dest/node"
-            chmod +x "$dest/node"
-          fi
-          node --version
-
-      - name: Generate icons
-        working-directory: tools/desktop/${{ matrix.app }}
-        run: npx @tauri-apps/cli icon ../../../app/img/icon-512.png
-
-      - name: Build
-        working-directory: tools/desktop/${{ matrix.app }}
+      # Tauri takes the bundle version from tauri.conf.json, so the release
+      # version has to land there before the build or every installer would be
+      # named 0.1.0.
+      - name: Stamp the release version
         env:
-          APPIMAGE_EXTRACT_AND_RUN: 1
-          NO_STRIP: "true"
-        run: npx @tauri-apps/cli build
+          VERSION: ${{ needs.prepare.outputs.version }}
+          CONF: tools/desktop/${{ matrix.app }}/src-tauri/tauri.conf.json
+        run: |
+          node -e '
+            const fs = require("fs");
+            const [conf, version] = process.argv.slice(1);
+            const c = JSON.parse(fs.readFileSync(conf, "utf8"));
+            c.version = version;
+            fs.writeFileSync(conf, JSON.stringify(c, null, 2) + "\n");
+            console.log(`${conf}: version = ${version}`);
+          ' "$CONF" "$VERSION"
+
+      # The same entry point developers use. It stages this runner's Node into
+      # src-tauri/runtime/ (runner OS == target OS), generates the icons, runs
+      # `tauri build`, and drops the executable + installers into tools/bin/.
+      - name: Build (tools/build.sh)
+        run: bash tools/build.sh ${{ matrix.app }}
+
+      - name: Collect release assets
+        env:
+          BIN: ${{ matrix.bin }}
+          PLATFORM: ${{ matrix.platform }}
+          CONF: tools/desktop/${{ matrix.app }}/src-tauri/tauri.conf.json
+        run: |
+          set -euo pipefail
+          ext=""
+          [ "$RUNNER_OS" = "Windows" ] && ext=".exe"
+          mkdir -p staging/installers staging/standalone
+
+          # build.sh collects into a single flat tools/bin/; installers are named
+          # after productName, so match on that and never pick up a sibling app.
+          product="$(node -e '
+            const fs = require("fs");
+            process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).productName);
+          ' "$CONF")"
+
+          # Standalone executable (needs the bundled resources to run, so it is
+          # kept out of the published release, but it is useful for debugging).
+          if [ ! -f "tools/bin/$BIN$ext" ]; then
+            echo "::error::tools/build.sh produced no executable (tools/bin/$BIN$ext)"
+            ls -la tools/bin || true
+            exit 1
+          fi
+          cp "tools/bin/$BIN$ext" "staging/standalone/$BIN-$PLATFORM$ext"
+
+          # Installers, as collected by build.sh.
+          installers=0
+          for f in tools/bin/*; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            case "$base" in
+              "$product"*.AppImage|"$product"*.deb|"$product"*.rpm|"$product"*.dmg|"$product"*.msi|"$product"*.exe)
+                cp "$f" "staging/installers/$base"
+                installers=$((installers + 1))
+                ;;
+            esac
+          done
+
+          # The .app is a directory, so it survives neither `find -type f` in
+          # build.sh nor the artifact upload: archive it (ditto keeps the bundle
+          # layout and the executable bits).
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            appdir="tools/desktop/target/release/bundle/macos/$product.app"
+            if [ -d "$appdir" ]; then
+              name="$(printf '%s' "$product" | tr ' ' '-')"
+              ditto -c -k --sequesterRsrc --keepParent \
+                "$appdir" "staging/installers/$name-$PLATFORM.app.zip"
+              installers=$((installers + 1))
+            fi
+          fi
+
+          if [ "$installers" -eq 0 ]; then
+            echo "::error::no installers were produced for $BIN on $PLATFORM"
+            exit 1
+          fi
+          echo "Collected $installers installer(s):"
+          ls -la staging/installers
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: tcoaal-${{ matrix.app }}-${{ matrix.os }}
-          path: |
-            tools/desktop/target/release/bundle/**/*.dmg
-            tools/desktop/target/release/bundle/**/*.app
-            tools/desktop/target/release/bundle/**/*.AppImage
-            tools/desktop/target/release/bundle/**/*.deb
-            tools/desktop/target/release/bundle/**/*.rpm
-            tools/desktop/target/release/bundle/**/*.msi
-            tools/desktop/target/release/bundle/**/*.exe
-          if-no-files-found: ignore
+          name: tcoaal-${{ matrix.app }}-${{ matrix.platform }}
+          path: staging
+          if-no-files-found: error
 
   release:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
-
       - name: Download all build artifacts
         uses: actions/download-artifact@v8.0.1
         with:
           path: dist
 
+      - name: List what will be published
+        run: find dist -type f | sort
+
       - name: Publish release and tag the build commit
         uses: softprops/action-gh-release@v3.0.1
         with:
-          tag_name: desktop/v${{ inputs.version }}
-          name: Desktop v${{ inputs.version }}
+          tag_name: desktop/v${{ needs.prepare.outputs.version }}
+          name: Desktop v${{ needs.prepare.outputs.version }}
           target_commitish: ${{ github.sha }}
-          files: dist/**/*
+          # Installers only; the standalone executables are artifact-only.
+          files: dist/*/installers/*
+          fail_on_unmatched_files: true
