@@ -74,6 +74,19 @@ pub fn tool_path(resource_dir: &Path, script: &str) -> PathBuf {
     resource_dir.join("tools").join(script)
 }
 
+/// Keep a console child (node.exe, cmd.exe) from opening its own console
+/// window. The apps are GUI-subsystem executables on Windows, so every console
+/// program they spawn otherwise gets a fresh, visible console. No-op elsewhere.
+pub fn hide_console(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Run `node tools/<script> <args...>` from the bundled runtime, capturing
 /// output. The working directory is the resource dir so the tools resolve
 /// their sibling data files (tools/map-*.json) and app/js/libs the same way
@@ -106,6 +119,7 @@ pub fn run_tool(resource_dir: &Path, script: &str, args: &[String]) -> ToolResul
     cmd.arg(&script_path);
     cmd.args(args);
     cmd.current_dir(resource_dir);
+    hide_console(&mut cmd);
 
     match cmd.output() {
         Ok(out) => ToolResult {
@@ -533,6 +547,7 @@ fn open_url(url: &str) -> io::Result<()> {
     let mut cmd = if cfg!(target_os = "windows") {
         let mut c = Command::new("cmd");
         c.args(["/C", "start", "", url]);
+        hide_console(&mut c);
         c
     } else if cfg!(target_os = "macos") {
         let mut c = Command::new("open");

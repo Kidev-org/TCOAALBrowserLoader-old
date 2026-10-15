@@ -9,14 +9,15 @@
 // All heavy lifting runs in the bundled Node; Rust only spawns it.
 
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, State};
 use tcoaal_desktop_core::{
-    find_steam, list_archived, load_catalog, node_binary, refresh_catalog, remove_archived,
-    resolve_resource_dir, run_tool, shared_data_dir, steam_finish_download, steam_start_download,
-    tool_path, ArchivedVersion, CatalogRefresh, DownloadStart, SteamInfo, ToolResult,
+    find_steam, hide_console, list_archived, load_catalog, node_binary, refresh_catalog,
+    remove_archived, resolve_resource_dir, run_tool, shared_data_dir, steam_finish_download,
+    steam_start_download, tool_path, ArchivedVersion, CatalogRefresh, DownloadStart, SteamInfo,
+    ToolResult,
 };
 
 /// Holds the background `play.js` dev server child so it can be stopped.
@@ -111,12 +112,17 @@ fn start_play(app: AppHandle, project: String, state: State<PlayState>) -> Resul
     if let Some(child) = guard.as_mut() {
         let _ = child.kill();
     }
-    let child = Command::new(&node)
-        .arg(&script)
-        .arg(&project)
-        .current_dir(&dir)
-        .spawn()
-        .map_err(|e| format!("Failed to start play.js: {e}"))?;
+    let child = hide_console(
+        Command::new(&node)
+            .arg(&script)
+            .arg(&project)
+            .current_dir(&dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+    )
+    .spawn()
+    .map_err(|e| format!("Failed to start play.js: {e}"))?;
     *guard = Some(child);
     Ok(())
 }

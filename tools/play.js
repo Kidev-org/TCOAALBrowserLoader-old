@@ -157,6 +157,30 @@ function serveFile(res, abs, mime) {
   return true;
 }
 
+/** Open `u` in the default browser. `start` is a cmd builtin on Windows, so it
+ *  goes through `cmd /c start "" <url>` (the empty string is the window title).
+ *  A spawn failure arrives as an async 'error' event, so it is handled there:
+ *  the server keeps running and the URL stays printed. */
+function openBrowser(u) {
+  const [cmd, args] =
+    process.platform === "win32"
+      ? ["cmd", ["/c", "start", "", u]]
+      : [process.platform === "darwin" ? "open" : "xdg-open", [u]];
+  try {
+    const child = require("child_process").spawn(cmd, args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.on("error", (e) =>
+      console.error(`Could not open a browser (${e.message}); visit ${u}`),
+    );
+    child.unref();
+  } catch (e) {
+    console.error(`Could not open a browser (${e.message}); visit ${u}`);
+  }
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.project) {
@@ -243,19 +267,7 @@ function main() {
     const u = `http://127.0.0.1:${opts.port}/`;
     console.log(`TCOAAL (browser mode) at  ${u}`);
     console.log("Ctrl+C to stop.\n");
-    if (opts.open) {
-      const open =
-        { darwin: "open", win32: "start", linux: "xdg-open" }[
-          process.platform
-        ] || "xdg-open";
-      try {
-        require("child_process")
-          .spawn(open, [u], { detached: true, stdio: "ignore" })
-          .unref();
-      } catch (e) {
-        /* just print the URL */
-      }
-    }
+    if (opts.open) openBrowser(u);
   });
 }
 
