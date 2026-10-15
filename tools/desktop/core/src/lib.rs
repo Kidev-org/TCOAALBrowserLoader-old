@@ -24,10 +24,36 @@ pub struct ToolResult {
 /// of the app's bundled one. Lets `tauri dev` point straight at the repo
 /// (which already has tools/ + app/js/libs/) without building an installer.
 pub fn resolve_resource_dir(app_resource_dir: PathBuf) -> PathBuf {
-    match std::env::var_os("TCOAAL_RES_DIR") {
+    let dir = match std::env::var_os("TCOAAL_RES_DIR") {
         Some(p) if !p.is_empty() => PathBuf::from(p),
         _ => app_resource_dir,
+    };
+    if cfg!(windows) {
+        strip_verbatim_prefix(dir)
+    } else {
+        dir
     }
+}
+
+/// Turn a Windows verbatim path (`\\?\C:\x`, `\\?\UNC\host\share\x`) into its
+/// plain form (`C:\x`, `\\host\share\x`). Tauri canonicalizes the exe path, so
+/// its resource dir comes back verbatim, and Node cannot load a main script
+/// from one (`EISDIR: illegal operation on a directory, lstat 'C:'`). Any
+/// other verbatim form is returned unchanged.
+pub fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let Some(s) = path.to_str() else {
+        return path;
+    };
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        let b = rest.as_bytes();
+        if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+            return PathBuf::from(rest);
+        }
+    }
+    path
 }
 
 /// Path to the Node binary used to run the tools. Honors a TCOAAL_NODE env
@@ -923,6 +949,26 @@ pub fn steam_finish_download(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strips_windows_verbatim_prefix() {
+        let s = |p: &str| strip_verbatim_prefix(PathBuf::from(p));
+        assert_eq!(
+            s(r"\\?\C:\Program Files\TCOAAL Mod Creator"),
+            PathBuf::from(r"C:\Program Files\TCOAAL Mod Creator")
+        );
+        assert_eq!(
+            s(r"\\?\UNC\host\share\app"),
+            PathBuf::from(r"\\host\share\app")
+        );
+        // Already plain, or a verbatim form with no plain equivalent.
+        assert_eq!(s(r"C:\app"), PathBuf::from(r"C:\app"));
+        assert_eq!(
+            s(r"\\?\Volume{1234}\app"),
+            PathBuf::from(r"\\?\Volume{1234}\app")
+        );
+        assert_eq!(s("/opt/app"), PathBuf::from("/opt/app"));
+    }
 
     // Verifies the binary appinfo.vdf parser against a fixture built from the
     // real `app_info_print 2378900` output. The fixture path is supplied via
